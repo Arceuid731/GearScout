@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 
@@ -152,7 +153,10 @@ public sealed class GearRecommendationService
         if (jobCompatibilityCache.TryGetValue(key, out var cached))
             return cached;
 
-        var jobSheet = dataManager.GetExcelSheet<ClassJob>();
+        // ClassJob.Abbreviation is localized (e.g. WAR -> GUE and FSH -> PEC on a French client),
+        // while ClassJobCategory's generated property names are based on the English abbreviations.
+        // Always resolve the reflection key from the English ClassJob sheet so compatibility is language-independent.
+        var jobSheet = dataManager.GetExcelSheet<ClassJob>(ClientLanguage.English);
         var categorySheet = dataManager.GetExcelSheet<ClassJobCategory>();
         if (!jobSheet.TryGetRow(jobId, out var job) || !categorySheet.TryGetRow(categoryId, out var category))
             return jobCompatibilityCache[key] = false;
