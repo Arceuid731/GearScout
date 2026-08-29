@@ -78,6 +78,12 @@ public sealed class ConfigWindow : Window, IDisposable
         Section("Window behaviour");
         changed |= Checkbox("Auto-open with Character window", config.AutoOpenWithCharacterWindow, v => config.AutoOpenWithCharacterWindow = v);
         changed |= Checkbox("Auto-open with retainer equipment", config.AutoOpenWithRetainerEquipment, v => config.AutoOpenWithRetainerEquipment = v);
+        changed |= Checkbox("Anchor GearScout next to the equipment window", config.AnchorToEquipmentWindow, v =>
+        {
+            config.AnchorToEquipmentWindow = v;
+            if (!v)
+                plugin.ReleaseWindowAnchor();
+        });
         changed |= Checkbox("Keep GearScout open while a plan is active", config.KeepOpenWhilePlanActive, v => config.KeepOpenWhilePlanActive = v);
         changed |= Checkbox("Close with the game equipment window when no plan is active", config.CloseWhenGameWindowCloses, v => config.CloseWhenGameWindowCloses = v);
         changed |= Checkbox("Only show actual upgrades", config.ShowOnlyUpgrades, v => config.ShowOnlyUpgrades = v);
