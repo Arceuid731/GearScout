@@ -64,23 +64,23 @@ public sealed class ConfigWindow : Window, IDisposable
             ImGui.EndCombo();
         }
 
-        changed |= Checkbox("Include gear equipped by another target", ref config.IncludeEquippedElsewhere);
+        changed |= Checkbox("Include gear equipped by another target", config.IncludeEquippedElsewhere, v => config.IncludeEquippedElsewhere = v);
         ImGui.TextDisabled("Disabled by default so GearScout won't suggest stripping another retainer/character.");
 
         ImGui.SeparatorText("Inventory sources");
-        changed |= Checkbox("Player inventory", ref config.IncludePlayerInventory);
-        changed |= Checkbox("Armoury Chest", ref config.IncludeArmoury);
-        changed |= Checkbox("Chocobo saddlebag", ref config.IncludeChocobo);
-        changed |= Checkbox("Retainers", ref config.IncludeRetainers);
-        changed |= Checkbox("Glamour dresser", ref config.IncludeGlamourDresser);
-        changed |= Checkbox("Armoire", ref config.IncludeArmoire);
+        changed |= Checkbox("Player inventory", config.IncludePlayerInventory, v => config.IncludePlayerInventory = v);
+        changed |= Checkbox("Armoury Chest", config.IncludeArmoury, v => config.IncludeArmoury = v);
+        changed |= Checkbox("Chocobo saddlebag", config.IncludeChocobo, v => config.IncludeChocobo = v);
+        changed |= Checkbox("Retainers", config.IncludeRetainers, v => config.IncludeRetainers = v);
+        changed |= Checkbox("Glamour dresser", config.IncludeGlamourDresser, v => config.IncludeGlamourDresser = v);
+        changed |= Checkbox("Armoire", config.IncludeArmoire, v => config.IncludeArmoire = v);
 
         ImGui.SeparatorText("Window behaviour");
-        changed |= Checkbox("Auto-open with Character window", ref config.AutoOpenWithCharacterWindow);
-        changed |= Checkbox("Auto-open with retainer equipment", ref config.AutoOpenWithRetainerEquipment);
-        changed |= Checkbox("Keep GearScout open while a plan is active", ref config.KeepOpenWhilePlanActive);
-        changed |= Checkbox("Close with the game equipment window when no plan is active", ref config.CloseWhenGameWindowCloses);
-        changed |= Checkbox("Only show actual upgrades", ref config.ShowOnlyUpgrades);
+        changed |= Checkbox("Auto-open with Character window", config.AutoOpenWithCharacterWindow, v => config.AutoOpenWithCharacterWindow = v);
+        changed |= Checkbox("Auto-open with retainer equipment", config.AutoOpenWithRetainerEquipment, v => config.AutoOpenWithRetainerEquipment = v);
+        changed |= Checkbox("Keep GearScout open while a plan is active", config.KeepOpenWhilePlanActive, v => config.KeepOpenWhilePlanActive = v);
+        changed |= Checkbox("Close with the game equipment window when no plan is active", config.CloseWhenGameWindowCloses, v => config.CloseWhenGameWindowCloses = v);
+        changed |= Checkbox("Only show actual upgrades", config.ShowOnlyUpgrades, v => config.ShowOnlyUpgrades = v);
 
         ImGui.SeparatorText("Data source");
         if (plugin.AllaganTools.IsAvailable)
@@ -107,10 +107,13 @@ public sealed class ConfigWindow : Window, IDisposable
         }
     }
 
-    private static bool Checkbox(string label, ref bool value)
+    private static bool Checkbox(string label, bool value, Action<bool> setter)
     {
-        var before = value;
-        ImGui.Checkbox(label, ref value);
-        return before != value;
+        var edited = value;
+        if (!ImGui.Checkbox(label, ref edited) || edited == value)
+            return false;
+
+        setter(edited);
+        return true;
     }
 }
