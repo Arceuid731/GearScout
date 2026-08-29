@@ -120,6 +120,7 @@ public sealed class RecommendationRow
 {
     public required GearSlot Slot { get; init; }
     public RecommendationCandidate? Recommended { get; init; }
+    public RecommendationCandidate? CurrentlyEquipped { get; init; }
     public RecommendationCandidate? BetterReservedCandidate { get; init; }
 }
 
