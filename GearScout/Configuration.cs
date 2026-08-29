@@ -19,6 +19,7 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool AutoOpenWithCharacterWindow { get; set; } = true;
     public bool AutoOpenWithRetainerEquipment { get; set; } = true;
+    public bool AnchorToEquipmentWindow { get; set; } = true;
     public bool KeepOpenWhilePlanActive { get; set; } = true;
     public bool CloseWhenGameWindowCloses { get; set; } = false;
     public bool ShowOnlyUpgrades { get; set; } = false;
