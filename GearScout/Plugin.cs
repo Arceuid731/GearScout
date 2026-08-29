@@ -15,7 +15,6 @@ public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
-    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManagerService { get; private set; } = null!;
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
@@ -98,10 +97,16 @@ public sealed class Plugin : IDalamudPlugin
 
         var characterId = AllaganTools.CurrentCharacterId;
         if (characterId == 0)
+            characterId = PlayerState.ContentId;
+        if (characterId == 0)
             return null;
 
-        var name = ClientState.LocalPlayer?.Name.ToString() ?? "Current character";
-        return new GearTarget(characterId, name, PlayerState.ClassJob.RowId, PlayerState.Level, false);
+        return new GearTarget(
+            characterId,
+            string.IsNullOrWhiteSpace(PlayerState.CharacterName) ? "Current character" : PlayerState.CharacterName,
+            PlayerState.ClassJob.RowId,
+            (uint)Math.Max(0, PlayerState.Level),
+            false);
     }
 
     public void ToggleConfigUi() => configWindow.Toggle();
