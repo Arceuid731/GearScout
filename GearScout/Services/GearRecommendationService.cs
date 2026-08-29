@@ -201,12 +201,13 @@ public sealed class GearRecommendationService
 
     private static ItemSourceKind GetSourceKind(GearTarget target, InventoryEntry entry)
     {
-        // Allagan Tools exposes both the physical inventory container and a sorted/display container.
-        // The physical container is authoritative; the sorted value is only a compatibility fallback.
-        var kind = ClassifyContainer(target, entry, entry.Container);
+        // Allagan Tools' SortedContainer is its canonical logical location. This matters for synthetic
+        // inventories such as the Armoire/Glamour Dresser, whose raw Container can remain Bag0 (0).
+        // Only fall back to the raw container when the logical type is not one GearScout understands.
+        var kind = ClassifyContainer(target, entry, entry.SortedContainer);
         return kind != ItemSourceKind.Unknown
             ? kind
-            : ClassifyContainer(target, entry, entry.SortedContainer);
+            : ClassifyContainer(target, entry, entry.Container);
     }
 
     private static ItemSourceKind ClassifyContainer(GearTarget target, InventoryEntry entry, uint container)
@@ -263,9 +264,21 @@ public sealed class GearRecommendationService
     public static bool IsEquippedContainer(uint container) => container is 1000 or 1001 or 11000;
     public static bool IsArmouryContainer(uint container) => container is >= 3200 and <= 3500;
     public static bool IsAccessiblePlayerContainer(uint container) => container <= 3 || IsArmouryContainer(container);
-    public static bool IsEquipped(InventoryEntry entry) => IsEquippedContainer(entry.Container) || IsEquippedContainer(entry.SortedContainer);
-    public static bool IsAccessiblePlayerItem(InventoryEntry entry) => IsAccessiblePlayerContainer(entry.Container) || IsAccessiblePlayerContainer(entry.SortedContainer);
-    public static bool IsArmouryItem(InventoryEntry entry) => IsArmouryContainer(entry.Container) || IsArmouryContainer(entry.SortedContainer);
+
+    private static bool IsKnownTrackedContainer(uint container) =>
+        IsEquippedContainer(container)
+        || container <= 3
+        || IsArmouryContainer(container)
+        || container is >= 4000 and <= 4101
+        || container is 2500 or 2501
+        || container is >= 10000 and <= 10006;
+
+    public static uint GetLogicalContainer(InventoryEntry entry) =>
+        IsKnownTrackedContainer(entry.SortedContainer) ? entry.SortedContainer : entry.Container;
+
+    public static bool IsEquipped(InventoryEntry entry) => IsEquippedContainer(GetLogicalContainer(entry));
+    public static bool IsAccessiblePlayerItem(InventoryEntry entry) => IsAccessiblePlayerContainer(GetLogicalContainer(entry));
+    public static bool IsArmouryItem(InventoryEntry entry) => IsArmouryContainer(GetLogicalContainer(entry));
 
     private static bool SamePhysicalItem(InventoryEntry a, InventoryEntry b) =>
         a.CharacterId == b.CharacterId && a.Container == b.Container && a.Slot == b.Slot && a.ItemId == b.ItemId;
