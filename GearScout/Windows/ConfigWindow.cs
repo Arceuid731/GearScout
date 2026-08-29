@@ -31,7 +31,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Spacing();
 
         Section("Reserved / equipped items");
-        ImGui.Text("Items used by gearsets");
+        ImGui.Text("Gearset items when outfitting retainers");
         ImGui.SameLine();
         var preview = config.GearsetItems switch
         {
@@ -63,6 +63,7 @@ public sealed class ConfigWindow : Window, IDisposable
             }
             ImGui.EndCombo();
         }
+        ImGui.TextDisabled("For your own character, gear referenced by your gearsets remains eligible, just like native Recommended Gear.");
 
         changed |= Checkbox("Include gear equipped by another target", config.IncludeEquippedElsewhere, v => config.IncludeEquippedElsewhere = v);
         ImGui.TextDisabled("Disabled by default so GearScout won't suggest stripping another retainer/character.");
@@ -85,7 +86,7 @@ public sealed class ConfigWindow : Window, IDisposable
                 plugin.ReleaseWindowAnchor();
         });
         changed |= Checkbox("Keep GearScout open while a plan is active", config.KeepOpenWhilePlanActive, v => config.KeepOpenWhilePlanActive = v);
-        changed |= Checkbox("Close with the game equipment window when no plan is active", config.CloseWhenGameWindowCloses, v => config.CloseWhenGameWindowCloses = v);
+        ImGui.TextDisabled("Without a selected retrieval plan, GearScout closes automatically with the native equipment window.");
         changed |= Checkbox("Only show actual upgrades", config.ShowOnlyUpgrades, v => config.ShowOnlyUpgrades = v);
 
         Section("Data source");

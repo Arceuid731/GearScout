@@ -81,7 +81,7 @@ public sealed class PlanService
                 exact = inventory.Where(x => x.ItemId == planned.ItemId && x.Flags == planned.Flags).ToList();
 
             var equipped = exact.FirstOrDefault(x =>
-                x.CharacterId == plan.TargetId && GearRecommendationService.IsEquippedContainer(x.SortedContainer));
+                x.CharacterId == plan.TargetId && GearRecommendationService.IsEquipped(x));
             if (equipped != null)
             {
                 planned.State = PlanItemState.Equipped;
@@ -90,11 +90,13 @@ public sealed class PlanService
             }
 
             var retrieved = exact.FirstOrDefault(x =>
-                x.CharacterId == activeCharacterId && GearRecommendationService.IsAccessiblePlayerContainer(x.SortedContainer));
+                x.CharacterId == activeCharacterId && GearRecommendationService.IsAccessiblePlayerItem(x));
             if (retrieved != null)
             {
                 planned.State = PlanItemState.Retrieved;
-                planned.CurrentSourceLabel = retrieved.SortedContainer <= 3 ? "Inventory" : "Armoury Chest";
+                planned.CurrentSourceLabel = GearRecommendationService.IsArmouryItem(retrieved)
+                    ? "Armoury Chest"
+                    : "Inventory";
                 continue;
             }
 
@@ -155,7 +157,7 @@ public sealed class PlanService
         Flags = candidate.Entry.Flags,
         ItemLevel = candidate.ItemLevel,
         OriginalCharacterId = candidate.Entry.CharacterId,
-        OriginalContainer = candidate.Entry.SortedContainer,
+        OriginalContainer = candidate.Entry.Container,
         OriginalSourceLabel = candidate.SourceLabel,
         CurrentSourceLabel = candidate.SourceLabel,
         State = candidate.SourceKind == ItemSourceKind.EquippedTarget

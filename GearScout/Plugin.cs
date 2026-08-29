@@ -63,7 +63,7 @@ public sealed class Plugin : IDalamudPlugin
         AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "RetainerCharacter", OnRetainerDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "RetainerCharacter", OnRetainerFinalize);
 
-        if (Configuration.ActivePlan != null && Configuration.KeepOpenWhilePlanActive)
+        if (Configuration.ActivePlan is { Items.Count: > 0 } && Configuration.KeepOpenWhilePlanActive)
             mainWindow.IsOpen = true;
 
         Log.Information("GearScout loaded (API 15 beta)");
@@ -83,7 +83,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public GearTarget? GetEffectiveTarget()
     {
-        if (Configuration.ActivePlan != null)
+        if (Configuration.ActivePlan is { Items.Count: > 0 })
             return Configuration.ActivePlan.ToTarget();
 
         if (retainerEquipmentContext)
@@ -188,13 +188,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private void HandleEquipmentWindowClosed()
     {
-        if (Configuration.ActivePlan != null && Configuration.KeepOpenWhilePlanActive)
+        // A non-empty retrieval plan is the only reason GearScout should outlive the native equipment window.
+        if (Configuration.ActivePlan is { Items.Count: > 0 } && Configuration.KeepOpenWhilePlanActive)
         {
             mainWindow.IsOpen = true;
             return;
         }
 
-        if (Configuration.CloseWhenGameWindowCloses)
-            mainWindow.IsOpen = false;
+        mainWindow.IsOpen = false;
     }
 }
