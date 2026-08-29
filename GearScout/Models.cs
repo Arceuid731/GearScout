@@ -48,6 +48,8 @@ public enum ReservedItemPolicy
     Allow,
 }
 
+public readonly record struct RecommendationScore(long Priority1, long Priority2, long Priority3, long Priority4);
+
 public sealed record GearTarget(ulong Id, string Name, uint JobId, uint Level, bool IsRetainer)
 {
     public string Key => $"{(IsRetainer ? "retainer" : "player")}:{Id}";
@@ -113,6 +115,8 @@ public sealed class RecommendationCandidate
     public required uint EquipLevel { get; init; }
     public required ItemSourceKind SourceKind { get; init; }
     public required string SourceLabel { get; init; }
+    public required RecommendationScore Score { get; init; }
+    public required string RankingSummary { get; init; }
     public bool ReservedByGearSet => Entry.InGearSet;
 }
 

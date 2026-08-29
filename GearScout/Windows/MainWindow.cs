@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using GearScout.Services;
 using Lumina.Excel.Sheets;
 
 namespace GearScout.Windows;
@@ -158,7 +159,7 @@ public sealed class MainWindow : Window, IDisposable
         }
         else
         {
-            ImGui.TextDisabled("Recommendations are based on equippable level + item level, mirroring the game's Recommended Gear philosophy rather than BiS stat weights.");
+            ImGui.TextDisabled("Recommended Gear-style ranking: job stats first, item level as fallback/tie-breaker — not an endgame BiS solver.");
         }
 
         ImGui.Separator();
@@ -189,7 +190,7 @@ public sealed class MainWindow : Window, IDisposable
                 continue;
 
             var current = row.CurrentlyEquipped;
-            var isUpgrade = current == null || candidate.ItemLevel > current.ItemLevel || candidate.Entry.Fingerprint != current.Entry.Fingerprint;
+            var isUpgrade = current == null || GearRecommendationService.IsBetter(candidate, current);
             if (plugin.Configuration.ShowOnlyUpgrades && !isUpgrade && row.BetterReservedCandidate == null)
                 continue;
 
@@ -214,6 +215,7 @@ public sealed class MainWindow : Window, IDisposable
                 ImGui.BeginTooltip();
                 ImGui.TextUnformatted(candidate.ItemName);
                 ImGui.TextDisabled($"Equip level {candidate.EquipLevel} • item level {candidate.ItemLevel}");
+                ImGui.TextDisabled(candidate.RankingSummary);
                 ImGui.TextDisabled($"Item #{candidate.Entry.ItemId} • {candidate.SourceLabel}");
                 if (candidate.Entry.InGearSet)
                     ImGui.TextColored(new Vector4(1f, 0.75f, 0.25f, 1f), $"Used by gearset(s): {string.Join(", ", candidate.Entry.GearSets.Select(x => $"#{x + 1}"))}");
@@ -239,7 +241,7 @@ public sealed class MainWindow : Window, IDisposable
                 ImGui.TextColored(new Vector4(1f, 0.75f, 0.25f, 1f),
                     $"Reserved better: {row.BetterReservedCandidate.ItemName} ({row.BetterReservedCandidate.ItemLevel})");
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip($"{row.BetterReservedCandidate.SourceLabel}\nUsed by one or more gearsets; current policy is Show as reserved.");
+                    ImGui.SetTooltip($"{row.BetterReservedCandidate.SourceLabel}\n{row.BetterReservedCandidate.RankingSummary}\nUsed by one or more gearsets; current policy is Show as reserved.");
             }
         }
 

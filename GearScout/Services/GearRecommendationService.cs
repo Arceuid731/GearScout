@@ -10,11 +10,48 @@ namespace GearScout.Services;
 
 public sealed class GearRecommendationService
 {
+    private const uint Strength = 1;
+    private const uint Dexterity = 2;
+    private const uint Vitality = 3;
+    private const uint Intelligence = 4;
+    private const uint Mind = 5;
+    private const uint Piety = 6;
+    private const uint GatheringPoints = 10;
+    private const uint CraftingPoints = 11;
+    private const uint PhysicalDamage = 12;
+    private const uint MagicDamage = 13;
+    private const uint BlockRate = 17;
+    private const uint BlockStrength = 18;
+    private const uint Tenacity = 19;
+    private const uint Defense = 21;
+    private const uint DirectHit = 22;
+    private const uint MagicDefense = 24;
+    private const uint CriticalHit = 27;
+    private const uint Determination = 44;
+    private const uint SkillSpeed = 45;
+    private const uint SpellSpeed = 46;
+    private const uint Craftsmanship = 70;
+    private const uint Control = 71;
+    private const uint Gathering = 72;
+    private const uint Perception = 73;
+
     private readonly IDataManager dataManager;
     private readonly Configuration config;
     private readonly AllaganToolsService allagan;
     private readonly RetainerService retainers;
     private readonly Dictionary<(uint CategoryId, uint JobId), bool> jobCompatibilityCache = new();
+    private readonly Dictionary<uint, JobProfile> jobProfileCache = new();
+
+    private enum ProfileKind
+    {
+        Unknown,
+        Combat,
+        Tank,
+        Gatherer,
+        Crafter,
+    }
+
+    private readonly record struct JobProfile(ProfileKind Kind, uint MainStat, bool UsesMagicDamage, string MainStatName);
 
     public GearRecommendationService(IDataManager dataManager, Configuration config, AllaganToolsService allagan, RetainerService retainers)
     {
@@ -29,9 +66,8 @@ public sealed class GearRecommendationService
         inventory ??= allagan.GetAllItems();
         var retainerMap = retainers.GetRetainers();
         var buckets = Enum.GetValues<GearSlot>().ToDictionary(x => x, _ => new List<RecommendationCandidate>());
-        // Gearset reservations exist mainly to avoid stripping the player's saved sets to outfit a retainer.
-        // For the player themself, a piece referenced by a gearset is still a perfectly valid Recommended Gear candidate.
         var gearsetPolicy = target.IsRetainer ? config.GearsetItems : ReservedItemPolicy.Allow;
+        var profile = GetJobProfile(target.JobId);
 
         foreach (var entry in inventory)
         {
@@ -41,6 +77,7 @@ public sealed class GearRecommendationService
             var slots = GetSlots(item);
             foreach (var slot in slots)
             {
+                var score = BuildScore(item, entry.IsHighQuality, profile, slot, out var rankingSummary);
                 buckets[slot].Add(new RecommendationCandidate
                 {
                     Entry = entry,
@@ -50,6 +87,8 @@ public sealed class GearRecommendationService
                     EquipLevel = item.LevelEquip,
                     SourceKind = sourceKind,
                     SourceLabel = sourceLabel,
+                    Score = score,
+                    RankingSummary = rankingSummary,
                 });
             }
         }
@@ -57,12 +96,7 @@ public sealed class GearRecommendationService
         var rows = new List<RecommendationRow>();
         foreach (var slot in Enum.GetValues<GearSlot>())
         {
-            var ordered = buckets[slot].OrderByDescending(x => x.ItemLevel)
-                .ThenByDescending(x => x.EquipLevel)
-                .ThenByDescending(x => x.Entry.IsHighQuality)
-                .ThenByDescending(x => x.Entry.ItemId)
-                .ToList();
-
+            var ordered = OrderCandidates(buckets[slot]).ToList();
             var currentlyEquipped = ordered.FirstOrDefault(x => x.SourceKind == ItemSourceKind.EquippedTarget);
             RecommendationCandidate? recommended;
             RecommendationCandidate? reservedBetter = null;
@@ -96,10 +130,7 @@ public sealed class GearRecommendationService
         var rightIndex = rows.FindIndex(x => x.Slot == GearSlot.RingRight);
         if (left.Recommended != null && rightIndex >= 0)
         {
-            var rightOrdered = buckets[GearSlot.RingRight].OrderByDescending(x => x.ItemLevel)
-                .ThenByDescending(x => x.EquipLevel)
-                .ThenByDescending(x => x.Entry.IsHighQuality)
-                .ThenByDescending(x => x.Entry.ItemId)
+            var rightOrdered = OrderCandidates(buckets[GearSlot.RingRight])
                 .Where(x => !SamePhysicalItem(x.Entry, left.Recommended.Entry));
 
             if (gearsetPolicy != ReservedItemPolicy.Allow)
@@ -115,6 +146,124 @@ public sealed class GearRecommendationService
         }
 
         return rows;
+    }
+
+    public static bool IsBetter(RecommendationCandidate candidate, RecommendationCandidate current) => Compare(candidate, current) > 0;
+
+    private static IOrderedEnumerable<RecommendationCandidate> OrderCandidates(IEnumerable<RecommendationCandidate> candidates) =>
+        candidates.OrderByDescending(x => x.Score.Priority1)
+            .ThenByDescending(x => x.Score.Priority2)
+            .ThenByDescending(x => x.Score.Priority3)
+            .ThenByDescending(x => x.Score.Priority4)
+            .ThenByDescending(x => x.ItemLevel)
+            .ThenByDescending(x => x.EquipLevel)
+            .ThenByDescending(x => x.Entry.IsHighQuality)
+            .ThenByDescending(x => x.Entry.ItemId);
+
+    private RecommendationScore BuildScore(Item item, bool highQuality, JobProfile profile, GearSlot slot, out string summary)
+    {
+        var stats = GetItemStats(item, highQuality);
+        long S(uint id) => stats.TryGetValue(id, out var value) ? value : 0;
+
+        switch (profile.Kind)
+        {
+            case ProfileKind.Crafter:
+            {
+                var craftsmanship = S(Craftsmanship);
+                var control = S(Control);
+                var cp = S(CraftingPoints);
+                summary = $"Craftsmanship {craftsmanship} • Control {control} • CP {cp}";
+                return new RecommendationScore(craftsmanship + control, cp, item.LevelItem.RowId, item.LevelEquip);
+            }
+            case ProfileKind.Gatherer:
+            {
+                var gathering = S(Gathering);
+                var perception = S(Perception);
+                var gp = S(GatheringPoints);
+                summary = $"Gathering {gathering} • Perception {perception} • GP {gp}";
+                return new RecommendationScore(gathering + perception, gp, item.LevelItem.RowId, item.LevelEquip);
+            }
+            case ProfileKind.Tank:
+            case ProfileKind.Combat:
+            {
+                var main = S(profile.MainStat);
+                var vitality = S(Vitality);
+                var defense = S(Defense) + S(MagicDefense);
+                var secondary = S(CriticalHit) + S(Determination) + S(DirectHit) + S(SkillSpeed) + S(SpellSpeed) + S(Tenacity) + S(Piety);
+                var block = S(BlockRate) + S(BlockStrength);
+                var weaponDamage = profile.UsesMagicDamage ? S(MagicDamage) : S(PhysicalDamage);
+
+                summary = slot == GearSlot.MainHand && weaponDamage > 0
+                    ? $"{(profile.UsesMagicDamage ? "Magic" : "Physical")} Damage {weaponDamage} • {profile.MainStatName} {main} • VIT {vitality}"
+                    : $"{profile.MainStatName} {main} • VIT {vitality} • Def {defense}";
+
+                if (slot == GearSlot.MainHand && weaponDamage > 0)
+                    return new RecommendationScore(weaponDamage, main, vitality, secondary + defense);
+
+                if (profile.Kind == ProfileKind.Tank)
+                    return new RecommendationScore(main, defense + block, vitality, secondary);
+
+                return new RecommendationScore(main, vitality, secondary, defense);
+            }
+            default:
+                summary = $"Item level {item.LevelItem.RowId}";
+                return new RecommendationScore(item.LevelItem.RowId, item.LevelEquip, highQuality ? 1 : 0, item.RowId);
+        }
+    }
+
+    private static Dictionary<uint, long> GetItemStats(Item item, bool highQuality)
+    {
+        var result = new Dictionary<uint, long>();
+
+        static void Add(Dictionary<uint, long> target, uint statId, long value)
+        {
+            if (statId == 0 || value == 0)
+                return;
+            target[statId] = target.GetValueOrDefault(statId) + value;
+        }
+
+        for (var i = 0; i < item.BaseParam.Count; i++)
+            Add(result, item.BaseParam[i].RowId, item.BaseParamValue[i]);
+
+        if (highQuality)
+        {
+            for (var i = 0; i < item.BaseParamSpecial.Count; i++)
+                Add(result, item.BaseParamSpecial[i].RowId, item.BaseParamValueSpecial[i]);
+        }
+
+        return result;
+    }
+
+    private JobProfile GetJobProfile(uint jobId)
+    {
+        if (jobProfileCache.TryGetValue(jobId, out var cached))
+            return cached;
+
+        var sheet = dataManager.GetExcelSheet<ClassJob>(ClientLanguage.English);
+        if (!sheet.TryGetRow(jobId, out var job))
+            return jobProfileCache[jobId] = new JobProfile(ProfileKind.Unknown, 0, false, "Main");
+
+        var abbreviation = job.Abbreviation.ToString().ToUpperInvariant();
+        var profile = abbreviation switch
+        {
+            "CRP" or "BSM" or "ARM" or "GSM" or "LTW" or "WVR" or "ALC" or "CUL"
+                => new JobProfile(ProfileKind.Crafter, 0, false, ""),
+            "MIN" or "BTN" or "FSH"
+                => new JobProfile(ProfileKind.Gatherer, 0, false, ""),
+            "GLA" or "PLD" or "MRD" or "WAR" or "DRK" or "GNB"
+                => new JobProfile(ProfileKind.Tank, Strength, false, "STR"),
+            "PGL" or "MNK" or "LNC" or "DRG" or "SAM" or "RPR"
+                => new JobProfile(ProfileKind.Combat, Strength, false, "STR"),
+            "ROG" or "NIN" or "VPR" or "ARC" or "BRD" or "MCH" or "DNC"
+                => new JobProfile(ProfileKind.Combat, Dexterity, false, "DEX"),
+            "THM" or "BLM" or "ACN" or "SMN" or "RDM" or "BLU" or "PCT"
+                => new JobProfile(ProfileKind.Combat, Intelligence, true, "INT"),
+            "CNJ" or "WHM" or "SCH" or "AST" or "SGE"
+                => new JobProfile(ProfileKind.Combat, Mind, true, "MND"),
+            _ => new JobProfile(ProfileKind.Unknown, 0, false, "Main"),
+        };
+
+        return jobProfileCache[jobId] = profile;
     }
 
     private bool TryBuildCandidateBase(
@@ -153,9 +302,6 @@ public sealed class GearRecommendationService
         if (jobCompatibilityCache.TryGetValue(key, out var cached))
             return cached;
 
-        // ClassJob.Abbreviation is localized (e.g. WAR -> GUE and FSH -> PEC on a French client),
-        // while ClassJobCategory's generated property names are based on the English abbreviations.
-        // Always resolve the reflection key from the English ClassJob sheet so compatibility is language-independent.
         var jobSheet = dataManager.GetExcelSheet<ClassJob>(ClientLanguage.English);
         var categorySheet = dataManager.GetExcelSheet<ClassJobCategory>();
         if (!jobSheet.TryGetRow(jobId, out var job) || !categorySheet.TryGetRow(categoryId, out var category))
@@ -177,33 +323,30 @@ public sealed class GearRecommendationService
             return Array.Empty<GearSlot>();
 
         var slots = new List<GearSlot>();
-        AddIf(category, "MainHand", GearSlot.MainHand, slots);
-        AddIf(category, "OffHand", GearSlot.OffHand, slots);
-        AddIf(category, "Head", GearSlot.Head, slots);
-        AddIf(category, "Body", GearSlot.Body, slots);
-        AddIf(category, "Gloves", GearSlot.Hands, slots);
-        AddIf(category, "Legs", GearSlot.Legs, slots);
-        AddIf(category, "Feet", GearSlot.Feet, slots);
-        AddIf(category, "Ears", GearSlot.Ears, slots);
-        AddIf(category, "Neck", GearSlot.Neck, slots);
-        AddIf(category, "Wrists", GearSlot.Wrists, slots);
-        AddIf(category, "FingerL", GearSlot.RingLeft, slots);
-        AddIf(category, "FingerR", GearSlot.RingRight, slots);
+        AddIfPositive(category, "MainHand", GearSlot.MainHand, slots);
+        AddIfPositive(category, "OffHand", GearSlot.OffHand, slots);
+        AddIfPositive(category, "Head", GearSlot.Head, slots);
+        AddIfPositive(category, "Body", GearSlot.Body, slots);
+        AddIfPositive(category, "Gloves", GearSlot.Hands, slots);
+        AddIfPositive(category, "Legs", GearSlot.Legs, slots);
+        AddIfPositive(category, "Feet", GearSlot.Feet, slots);
+        AddIfPositive(category, "Ears", GearSlot.Ears, slots);
+        AddIfPositive(category, "Neck", GearSlot.Neck, slots);
+        AddIfPositive(category, "Wrists", GearSlot.Wrists, slots);
+        AddIfPositive(category, "FingerL", GearSlot.RingLeft, slots);
+        AddIfPositive(category, "FingerR", GearSlot.RingRight, slots);
         return slots;
     }
 
-    private static void AddIf(EquipSlotCategory category, string propertyName, GearSlot slot, List<GearSlot> output)
+    private static void AddIfPositive(EquipSlotCategory category, string propertyName, GearSlot slot, List<GearSlot> output)
     {
         var property = typeof(EquipSlotCategory).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-        if (property != null && IsTruthy(property.GetValue(category)))
+        if (property != null && IsPositive(property.GetValue(category)))
             output.Add(slot);
     }
 
     private static ItemSourceKind GetSourceKind(GearTarget target, InventoryEntry entry)
     {
-        // Allagan Tools' SortedContainer is its canonical logical location. This matters for synthetic
-        // inventories such as the Armoire/Glamour Dresser, whose raw Container can remain Bag0 (0).
-        // Only fall back to the raw container when the logical type is not one GearScout understands.
         var kind = ClassifyContainer(target, entry, entry.SortedContainer);
         return kind != ItemSourceKind.Unknown
             ? kind
@@ -285,12 +428,34 @@ public sealed class GearRecommendationService
 
     private static int Compare(RecommendationCandidate a, RecommendationCandidate b)
     {
-        var itemLevel = a.ItemLevel.CompareTo(b.ItemLevel);
-        if (itemLevel != 0) return itemLevel;
-        var equipLevel = a.EquipLevel.CompareTo(b.EquipLevel);
-        if (equipLevel != 0) return equipLevel;
+        var value = a.Score.Priority1.CompareTo(b.Score.Priority1);
+        if (value != 0) return value;
+        value = a.Score.Priority2.CompareTo(b.Score.Priority2);
+        if (value != 0) return value;
+        value = a.Score.Priority3.CompareTo(b.Score.Priority3);
+        if (value != 0) return value;
+        value = a.Score.Priority4.CompareTo(b.Score.Priority4);
+        if (value != 0) return value;
+        value = a.ItemLevel.CompareTo(b.ItemLevel);
+        if (value != 0) return value;
+        value = a.EquipLevel.CompareTo(b.EquipLevel);
+        if (value != 0) return value;
         return a.Entry.IsHighQuality.CompareTo(b.Entry.IsHighQuality);
     }
+
+    private static bool IsPositive(object? value) => value switch
+    {
+        bool b => b,
+        byte b => b > 0,
+        sbyte b => b > 0,
+        short b => b > 0,
+        ushort b => b > 0,
+        int b => b > 0,
+        uint b => b > 0,
+        long b => b > 0,
+        ulong b => b > 0,
+        _ => false,
+    };
 
     private static bool IsTruthy(object? value) => value switch
     {
