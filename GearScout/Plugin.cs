@@ -105,7 +105,7 @@ public sealed class Plugin : IDalamudPlugin
             characterId,
             string.IsNullOrWhiteSpace(PlayerState.CharacterName) ? "Current character" : PlayerState.CharacterName,
             PlayerState.ClassJob.RowId,
-            (uint)Math.Max(0, PlayerState.Level),
+            PlayerState.Level > 0 ? (uint)PlayerState.Level : 0u,
             false);
     }
 
