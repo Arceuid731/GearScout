@@ -157,7 +157,7 @@ public sealed class PlanService
         Flags = candidate.Entry.Flags,
         ItemLevel = candidate.ItemLevel,
         OriginalCharacterId = candidate.Entry.CharacterId,
-        OriginalContainer = candidate.Entry.Container,
+        OriginalContainer = GearRecommendationService.GetLogicalContainer(candidate.Entry),
         OriginalSourceLabel = candidate.SourceLabel,
         CurrentSourceLabel = candidate.SourceLabel,
         State = candidate.SourceKind == ItemSourceKind.EquippedTarget
