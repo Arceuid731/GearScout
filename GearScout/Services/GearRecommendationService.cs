@@ -28,6 +28,9 @@ public sealed class GearRecommendationService
         inventory ??= allagan.GetAllItems();
         var retainerMap = retainers.GetRetainers();
         var buckets = Enum.GetValues<GearSlot>().ToDictionary(x => x, _ => new List<RecommendationCandidate>());
+        // Gearset reservations exist mainly to avoid stripping the player's saved sets to outfit a retainer.
+        // For the player themself, a piece referenced by a gearset is still a perfectly valid Recommended Gear candidate.
+        var gearsetPolicy = target.IsRetainer ? config.GearsetItems : ReservedItemPolicy.Allow;
 
         foreach (var entry in inventory)
         {
@@ -63,14 +66,14 @@ public sealed class GearRecommendationService
             RecommendationCandidate? recommended;
             RecommendationCandidate? reservedBetter = null;
 
-            if (config.GearsetItems == ReservedItemPolicy.Allow)
+            if (gearsetPolicy == ReservedItemPolicy.Allow)
             {
                 recommended = ordered.FirstOrDefault();
             }
             else
             {
                 recommended = ordered.FirstOrDefault(x => !x.ReservedByGearSet || x.SourceKind == ItemSourceKind.EquippedTarget);
-                if (config.GearsetItems == ReservedItemPolicy.ShowOnly)
+                if (gearsetPolicy == ReservedItemPolicy.ShowOnly)
                 {
                     var bestReserved = ordered.FirstOrDefault(x => x.ReservedByGearSet && x.SourceKind != ItemSourceKind.EquippedTarget);
                     if (bestReserved != null && (recommended == null || Compare(bestReserved, recommended) > 0))
@@ -98,7 +101,7 @@ public sealed class GearRecommendationService
                 .ThenByDescending(x => x.Entry.ItemId)
                 .Where(x => !SamePhysicalItem(x.Entry, left.Recommended.Entry));
 
-            if (config.GearsetItems != ReservedItemPolicy.Allow)
+            if (gearsetPolicy != ReservedItemPolicy.Allow)
                 rightOrdered = rightOrdered.Where(x => !x.ReservedByGearSet || x.SourceKind == ItemSourceKind.EquippedTarget);
 
             rows[rightIndex] = new RecommendationRow
@@ -194,13 +197,22 @@ public sealed class GearRecommendationService
 
     private static ItemSourceKind GetSourceKind(GearTarget target, InventoryEntry entry)
     {
-        var container = entry.SortedContainer;
+        // Allagan Tools exposes both the physical inventory container and a sorted/display container.
+        // The physical container is authoritative; the sorted value is only a compatibility fallback.
+        var kind = ClassifyContainer(target, entry, entry.Container);
+        return kind != ItemSourceKind.Unknown
+            ? kind
+            : ClassifyContainer(target, entry, entry.SortedContainer);
+    }
+
+    private static ItemSourceKind ClassifyContainer(GearTarget target, InventoryEntry entry, uint container)
+    {
         if (IsEquippedContainer(container))
             return entry.CharacterId == target.Id ? ItemSourceKind.EquippedTarget : ItemSourceKind.EquippedElsewhere;
 
         if (container <= 3)
             return ItemSourceKind.PlayerInventory;
-        if (container is >= 3200 and <= 3500)
+        if (IsArmouryContainer(container))
             return ItemSourceKind.Armoury;
         if (container is >= 4000 and <= 4101)
             return ItemSourceKind.Chocobo;
@@ -245,7 +257,11 @@ public sealed class GearRecommendationService
     }
 
     public static bool IsEquippedContainer(uint container) => container is 1000 or 1001 or 11000;
-    public static bool IsAccessiblePlayerContainer(uint container) => container <= 3 || container is >= 3200 and <= 3500;
+    public static bool IsArmouryContainer(uint container) => container is >= 3200 and <= 3500;
+    public static bool IsAccessiblePlayerContainer(uint container) => container <= 3 || IsArmouryContainer(container);
+    public static bool IsEquipped(InventoryEntry entry) => IsEquippedContainer(entry.Container) || IsEquippedContainer(entry.SortedContainer);
+    public static bool IsAccessiblePlayerItem(InventoryEntry entry) => IsAccessiblePlayerContainer(entry.Container) || IsAccessiblePlayerContainer(entry.SortedContainer);
+    public static bool IsArmouryItem(InventoryEntry entry) => IsArmouryContainer(entry.Container) || IsArmouryContainer(entry.SortedContainer);
 
     private static bool SamePhysicalItem(InventoryEntry a, InventoryEntry b) =>
         a.CharacterId == b.CharacterId && a.Container == b.Container && a.Slot == b.Slot && a.ItemId == b.ItemId;
