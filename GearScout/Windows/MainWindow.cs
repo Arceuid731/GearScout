@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Lumina.Excel.Sheets;
 
@@ -17,11 +18,15 @@ public sealed class MainWindow : Window, IDisposable
     private string targetKey = string.Empty;
     private bool forceRefresh = true;
     private bool groupPlanBySource = true;
+    private Vector2? nativeWindowPosition;
+    private float nativeWindowWidth;
+    private Vector2 lastKnownSize = new(640, 380);
 
     public MainWindow(Plugin plugin)
         : base("GearScout##GearScoutMain")
     {
         this.plugin = plugin;
+        ForceMainWindow = true;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(640, 380),
@@ -32,8 +37,49 @@ public sealed class MainWindow : Window, IDisposable
     public void Dispose() { }
     public void RequestRefresh() => forceRefresh = true;
 
+    public void AnchorTo(Vector2 nativePosition, float nativeScaledWidth)
+    {
+        if (!plugin.Configuration.AnchorToEquipmentWindow)
+        {
+            ReleaseAnchor();
+            return;
+        }
+
+        nativeWindowPosition = nativePosition;
+        nativeWindowWidth = nativeScaledWidth;
+    }
+
+    public void ReleaseAnchor()
+    {
+        nativeWindowPosition = null;
+        Position = null;
+        PositionCondition = ImGuiCond.None;
+    }
+
+    public override void PreDraw()
+    {
+        if (!plugin.Configuration.AnchorToEquipmentWindow || nativeWindowPosition == null)
+            return;
+
+        const float gap = 10f;
+        var viewport = ImGuiHelpers.MainViewport;
+        var availableWidth = viewport.WorkSize.X;
+        var desiredWidth = Math.Max(lastKnownSize.X, SizeConstraints?.MinimumSize.X * ImGuiHelpers.GlobalScale ?? 640f);
+
+        var right = nativeWindowPosition.Value.X + nativeWindowWidth + gap;
+        var left = nativeWindowPosition.Value.X - desiredWidth - gap;
+        var x = right + desiredWidth <= availableWidth
+            ? right
+            : Math.Max(0f, left);
+
+        Position = new Vector2(x, Math.Max(0f, nativeWindowPosition.Value.Y));
+        PositionCondition = ImGuiCond.Always;
+    }
+
     public override void Draw()
     {
+        lastKnownSize = ImGui.GetWindowSize();
+
         if (!plugin.AllaganTools.IsAvailable)
         {
             ImGui.TextColored(new Vector4(1f, 0.45f, 0.35f, 1f), "Allagan Tools is not available.");
