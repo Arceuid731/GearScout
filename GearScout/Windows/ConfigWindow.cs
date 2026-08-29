@@ -30,7 +30,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextWrapped("GearScout stays read-only: it recommends, locates and tracks gear, but never moves or equips items automatically.");
         ImGui.Spacing();
 
-        ImGui.SeparatorText("Reserved / equipped items");
+        Section("Reserved / equipped items");
         ImGui.Text("Items used by gearsets");
         ImGui.SameLine();
         var preview = config.GearsetItems switch
@@ -67,7 +67,7 @@ public sealed class ConfigWindow : Window, IDisposable
         changed |= Checkbox("Include gear equipped by another target", config.IncludeEquippedElsewhere, v => config.IncludeEquippedElsewhere = v);
         ImGui.TextDisabled("Disabled by default so GearScout won't suggest stripping another retainer/character.");
 
-        ImGui.SeparatorText("Inventory sources");
+        Section("Inventory sources");
         changed |= Checkbox("Player inventory", config.IncludePlayerInventory, v => config.IncludePlayerInventory = v);
         changed |= Checkbox("Armoury Chest", config.IncludeArmoury, v => config.IncludeArmoury = v);
         changed |= Checkbox("Chocobo saddlebag", config.IncludeChocobo, v => config.IncludeChocobo = v);
@@ -75,14 +75,14 @@ public sealed class ConfigWindow : Window, IDisposable
         changed |= Checkbox("Glamour dresser", config.IncludeGlamourDresser, v => config.IncludeGlamourDresser = v);
         changed |= Checkbox("Armoire", config.IncludeArmoire, v => config.IncludeArmoire = v);
 
-        ImGui.SeparatorText("Window behaviour");
+        Section("Window behaviour");
         changed |= Checkbox("Auto-open with Character window", config.AutoOpenWithCharacterWindow, v => config.AutoOpenWithCharacterWindow = v);
         changed |= Checkbox("Auto-open with retainer equipment", config.AutoOpenWithRetainerEquipment, v => config.AutoOpenWithRetainerEquipment = v);
         changed |= Checkbox("Keep GearScout open while a plan is active", config.KeepOpenWhilePlanActive, v => config.KeepOpenWhilePlanActive = v);
         changed |= Checkbox("Close with the game equipment window when no plan is active", config.CloseWhenGameWindowCloses, v => config.CloseWhenGameWindowCloses = v);
         changed |= Checkbox("Only show actual upgrades", config.ShowOnlyUpgrades, v => config.ShowOnlyUpgrades = v);
 
-        ImGui.SeparatorText("Data source");
+        Section("Data source");
         if (plugin.AllaganTools.IsAvailable)
             ImGui.TextColored(new Vector4(0.35f, 0.9f, 0.45f, 1f), "Allagan Tools IPC: connected");
         else
@@ -91,7 +91,7 @@ public sealed class ConfigWindow : Window, IDisposable
 
         if (plugin.Configuration.ActivePlan != null)
         {
-            ImGui.SeparatorText("Active plan");
+            Section("Active plan");
             ImGui.Text($"{plugin.Configuration.ActivePlan.TargetName} — {plugin.Configuration.ActivePlan.Items.Count} selected item(s)");
             if (ImGui.Button("Clear active plan"))
             {
@@ -105,6 +105,13 @@ public sealed class ConfigWindow : Window, IDisposable
             config.Save();
             plugin.RequestRefresh();
         }
+    }
+
+    private static void Section(string title)
+    {
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextUnformatted(title);
     }
 
     private static bool Checkbox(string label, bool value, Action<bool> setter)
