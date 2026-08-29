@@ -46,6 +46,7 @@ public sealed class GearRecommendationService
     {
         Unknown,
         Combat,
+        Healer,
         Tank,
         Gatherer,
         Crafter,
@@ -172,43 +173,75 @@ public sealed class GearRecommendationService
                 var craftsmanship = S(Craftsmanship);
                 var control = S(Control);
                 var cp = S(CraftingPoints);
-                summary = $"Craftsmanship {craftsmanship} • Control {control} • CP {cp}";
-                return new RecommendationScore(craftsmanship + control, cp, item.LevelItem.RowId, item.LevelEquip);
+                var balancedCore = Math.Min(craftsmanship, control);
+                var totalCore = craftsmanship + control;
+
+                summary = $"Rank: balanced crafting stats → total → CP → iLvl | Craftsmanship {craftsmanship} • Control {control} • CP {cp} • iLvl {item.LevelItem.RowId}";
+                return new RecommendationScore(balancedCore, totalCore, cp, item.LevelItem.RowId);
             }
             case ProfileKind.Gatherer:
             {
                 var gathering = S(Gathering);
                 var perception = S(Perception);
                 var gp = S(GatheringPoints);
-                summary = $"Gathering {gathering} • Perception {perception} • GP {gp}";
-                return new RecommendationScore(gathering + perception, gp, item.LevelItem.RowId, item.LevelEquip);
+                var balancedCore = Math.Min(gathering, perception);
+                var totalCore = gathering + perception;
+
+                summary = $"Rank: balanced gathering stats → total → GP → iLvl | Gathering {gathering} • Perception {perception} • GP {gp} • iLvl {item.LevelItem.RowId}";
+                return new RecommendationScore(balancedCore, totalCore, gp, item.LevelItem.RowId);
             }
             case ProfileKind.Tank:
+            case ProfileKind.Healer:
             case ProfileKind.Combat:
             {
                 var main = S(profile.MainStat);
                 var vitality = S(Vitality);
                 var defense = S(Defense) + S(MagicDefense);
-                var secondary = S(CriticalHit) + S(Determination) + S(DirectHit) + S(SkillSpeed) + S(SpellSpeed) + S(Tenacity) + S(Piety);
                 var block = S(BlockRate) + S(BlockStrength);
+                var secondary = RelevantSecondaryScore(profile.Kind, profile.UsesMagicDamage, S);
                 var weaponDamage = profile.UsesMagicDamage ? S(MagicDamage) : S(PhysicalDamage);
-
-                summary = slot == GearSlot.MainHand && weaponDamage > 0
-                    ? $"{(profile.UsesMagicDamage ? "Magic" : "Physical")} Damage {weaponDamage} • {profile.MainStatName} {main} • VIT {vitality}"
-                    : $"{profile.MainStatName} {main} • VIT {vitality} • Def {defense}";
+                var itemLevel = (long)item.LevelItem.RowId;
 
                 if (slot == GearSlot.MainHand && weaponDamage > 0)
-                    return new RecommendationScore(weaponDamage, main, vitality, secondary + defense);
+                {
+                    summary = $"Rank: weapon damage → {profile.MainStatName} → iLvl → role stats | {(profile.UsesMagicDamage ? "Magic" : "Physical")} Damage {weaponDamage} • {profile.MainStatName} {main} • iLvl {itemLevel} • VIT {vitality}";
+                    return new RecommendationScore(weaponDamage, main, itemLevel, vitality + secondary);
+                }
 
                 if (profile.Kind == ProfileKind.Tank)
-                    return new RecommendationScore(main, defense + block, vitality, secondary);
+                {
+                    if (slot == GearSlot.OffHand && block > 0)
+                    {
+                        summary = $"Rank: {profile.MainStatName} → iLvl → block → defenses | {profile.MainStatName} {main} • iLvl {itemLevel} • Block {block} • Def {defense} • VIT {vitality}";
+                        return new RecommendationScore(main, itemLevel, block, defense + vitality + secondary);
+                    }
 
-                return new RecommendationScore(main, vitality, secondary, defense);
+                    summary = $"Rank: {profile.MainStatName} → iLvl → defenses → VIT/secondaries | {profile.MainStatName} {main} • iLvl {itemLevel} • Def {defense} • VIT {vitality}";
+                    return new RecommendationScore(main, itemLevel, defense, vitality + secondary);
+                }
+
+                summary = $"Rank: {profile.MainStatName} → iLvl → VIT → role secondaries | {profile.MainStatName} {main} • iLvl {itemLevel} • VIT {vitality} • Secondary {secondary}";
+                return new RecommendationScore(main, itemLevel, vitality, secondary);
             }
             default:
-                summary = $"Item level {item.LevelItem.RowId}";
+                summary = $"Rank: iLvl → equip level → HQ | iLvl {item.LevelItem.RowId}";
                 return new RecommendationScore(item.LevelItem.RowId, item.LevelEquip, highQuality ? 1 : 0, item.RowId);
         }
+    }
+
+    private static long RelevantSecondaryScore(ProfileKind kind, bool usesMagicDamage, Func<uint, long> stat)
+    {
+        var crit = stat(CriticalHit);
+        var det = stat(Determination);
+
+        return kind switch
+        {
+            ProfileKind.Tank => crit + det + stat(Tenacity) + stat(SkillSpeed) + stat(DirectHit),
+            ProfileKind.Healer => crit + det + stat(SpellSpeed) + stat(Piety),
+            ProfileKind.Combat when usesMagicDamage => crit + det + stat(DirectHit) + stat(SpellSpeed),
+            ProfileKind.Combat => crit + det + stat(DirectHit) + stat(SkillSpeed),
+            _ => 0,
+        };
     }
 
     private static Dictionary<uint, long> GetItemStats(Item item, bool highQuality)
@@ -259,7 +292,7 @@ public sealed class GearRecommendationService
             "THM" or "BLM" or "ACN" or "SMN" or "RDM" or "BLU" or "PCT"
                 => new JobProfile(ProfileKind.Combat, Intelligence, true, "INT"),
             "CNJ" or "WHM" or "SCH" or "AST" or "SGE"
-                => new JobProfile(ProfileKind.Combat, Mind, true, "MND"),
+                => new JobProfile(ProfileKind.Healer, Mind, true, "MND"),
             _ => new JobProfile(ProfileKind.Unknown, 0, false, "Main"),
         };
 
