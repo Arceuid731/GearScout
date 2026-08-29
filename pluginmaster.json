@@ -5,7 +5,7 @@
     "InternalName": "GearScout",
     "Punchline": "Recommended Gear across everything you own.",
     "Description": "Find recommended gear across your inventory, Armoury Chest, chocobo saddlebag, retainers, glamour dresser and armoire, then build a persistent retrieve-to-equip checklist.",
-    "AssemblyVersion": "0.1.0.1",
+    "AssemblyVersion": "0.1.0.2",
     "RepoUrl": "https://github.com/Arceuid731/GearScout",
     "ApplicableVersion": "any",
     "Tags": ["gear", "inventory", "retainer", "recommended"],
