@@ -57,9 +57,11 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
 
         AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "Character", OnCharacterSetup);
+        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "Character", OnEquipmentDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "Character", OnCharacterFinalize);
         // Some client paths expose the retainer equipment sheet separately; listening is harmless when absent.
         AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "RetainerCharacter", OnRetainerSetup);
+        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "RetainerCharacter", OnEquipmentDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "RetainerCharacter", OnRetainerFinalize);
 
         if (Configuration.ActivePlan != null && Configuration.KeepOpenWhilePlanActive)
@@ -70,7 +72,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        AddonLifecycle.UnregisterListener(OnCharacterSetup, OnCharacterFinalize, OnRetainerSetup, OnRetainerFinalize);
+        AddonLifecycle.UnregisterListener(OnCharacterSetup, OnEquipmentDraw, OnCharacterFinalize, OnRetainerSetup, OnRetainerFinalize);
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -112,6 +114,7 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleConfigUi() => configWindow.Toggle();
     public void ToggleMainUi() => mainWindow.Toggle();
     public void RequestRefresh() => mainWindow.RequestRefresh();
+    public void ReleaseWindowAnchor() => mainWindow.ReleaseAnchor();
 
     private void OnMainCommand(string command, string args)
     {
@@ -129,12 +132,14 @@ public sealed class Plugin : IDalamudPlugin
             : Configuration.AutoOpenWithCharacterWindow;
         if (shouldOpen)
             mainWindow.IsOpen = true;
+        UpdateAnchor(args);
         RequestRefresh();
     }
 
     private void OnCharacterFinalize(AddonEvent type, AddonArgs args)
     {
         retainerEquipmentContext = false;
+        mainWindow.ReleaseAnchor();
         HandleEquipmentWindowClosed();
     }
 
@@ -143,13 +148,25 @@ public sealed class Plugin : IDalamudPlugin
         retainerEquipmentContext = true;
         if (Configuration.AutoOpenWithRetainerEquipment)
             mainWindow.IsOpen = true;
+        UpdateAnchor(args);
         RequestRefresh();
     }
 
     private void OnRetainerFinalize(AddonEvent type, AddonArgs args)
     {
         retainerEquipmentContext = false;
+        mainWindow.ReleaseAnchor();
         HandleEquipmentWindowClosed();
+    }
+
+    private void OnEquipmentDraw(AddonEvent type, AddonArgs args) => UpdateAnchor(args);
+
+    private void UpdateAnchor(AddonArgs args)
+    {
+        if (!Configuration.AnchorToEquipmentWindow || args.Addon.IsNull || !args.Addon.IsVisible)
+            return;
+
+        mainWindow.AnchorTo(args.Addon.Position, args.Addon.ScaledWidth);
     }
 
     private void HandleEquipmentWindowClosed()
