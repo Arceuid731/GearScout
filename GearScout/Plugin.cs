@@ -57,11 +57,10 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
 
         AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "Character", OnCharacterSetup);
-        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "Character", OnEquipmentDraw);
+        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "Character", OnCharacterDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "Character", OnCharacterFinalize);
-        // Some client paths expose the retainer equipment sheet separately; listening is harmless when absent.
         AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "RetainerCharacter", OnRetainerSetup);
-        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "RetainerCharacter", OnEquipmentDraw);
+        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "RetainerCharacter", OnRetainerDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "RetainerCharacter", OnRetainerFinalize);
 
         if (Configuration.ActivePlan != null && Configuration.KeepOpenWhilePlanActive)
@@ -72,7 +71,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        AddonLifecycle.UnregisterListener(OnCharacterSetup, OnEquipmentDraw, OnCharacterFinalize, OnRetainerSetup, OnRetainerFinalize);
+        AddonLifecycle.UnregisterListener(OnCharacterSetup, OnCharacterDraw, OnCharacterFinalize, OnRetainerSetup, OnRetainerDraw, OnRetainerFinalize);
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -126,14 +125,20 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCharacterSetup(AddonEvent type, AddonArgs args)
     {
-        retainerEquipmentContext = RetainerService.HasActiveRetainerSession();
-        var shouldOpen = retainerEquipmentContext
-            ? Configuration.AutoOpenWithRetainerEquipment
-            : Configuration.AutoOpenWithCharacterWindow;
-        if (shouldOpen)
+        // The game's RetainerManager can keep LastSelectedRetainerId/RetainerObjectId populated
+        // after leaving the bell. A real Character addon must therefore always mean the player.
+        SetEquipmentContext(isRetainer: false);
+        if (Configuration.AutoOpenWithCharacterWindow)
             mainWindow.IsOpen = true;
         UpdateAnchor(args);
-        RequestRefresh();
+    }
+
+    private void OnCharacterDraw(AddonEvent type, AddonArgs args)
+    {
+        // Reinforce the player context while the native Character window is visibly being drawn.
+        // This prevents a stale retainer session from ever stealing the target after plugin reloads.
+        SetEquipmentContext(isRetainer: false);
+        UpdateAnchor(args);
     }
 
     private void OnCharacterFinalize(AddonEvent type, AddonArgs args)
@@ -145,11 +150,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnRetainerSetup(AddonEvent type, AddonArgs args)
     {
-        retainerEquipmentContext = true;
+        SetEquipmentContext(isRetainer: true);
         if (Configuration.AutoOpenWithRetainerEquipment)
             mainWindow.IsOpen = true;
         UpdateAnchor(args);
-        RequestRefresh();
+    }
+
+    private void OnRetainerDraw(AddonEvent type, AddonArgs args)
+    {
+        SetEquipmentContext(isRetainer: true);
+        UpdateAnchor(args);
     }
 
     private void OnRetainerFinalize(AddonEvent type, AddonArgs args)
@@ -159,7 +169,14 @@ public sealed class Plugin : IDalamudPlugin
         HandleEquipmentWindowClosed();
     }
 
-    private void OnEquipmentDraw(AddonEvent type, AddonArgs args) => UpdateAnchor(args);
+    private void SetEquipmentContext(bool isRetainer)
+    {
+        if (retainerEquipmentContext == isRetainer)
+            return;
+
+        retainerEquipmentContext = isRetainer;
+        RequestRefresh();
+    }
 
     private void UpdateAnchor(AddonArgs args)
     {
