@@ -59,6 +59,7 @@ public sealed class GearRecommendationService
                 .ThenByDescending(x => x.Entry.ItemId)
                 .ToList();
 
+            var currentlyEquipped = ordered.FirstOrDefault(x => x.SourceKind == ItemSourceKind.EquippedTarget);
             RecommendationCandidate? recommended;
             RecommendationCandidate? reservedBetter = null;
 
@@ -68,10 +69,10 @@ public sealed class GearRecommendationService
             }
             else
             {
-                recommended = ordered.FirstOrDefault(x => !x.ReservedByGearSet);
+                recommended = ordered.FirstOrDefault(x => !x.ReservedByGearSet || x.SourceKind == ItemSourceKind.EquippedTarget);
                 if (config.GearsetItems == ReservedItemPolicy.ShowOnly)
                 {
-                    var bestReserved = ordered.FirstOrDefault(x => x.ReservedByGearSet);
+                    var bestReserved = ordered.FirstOrDefault(x => x.ReservedByGearSet && x.SourceKind != ItemSourceKind.EquippedTarget);
                     if (bestReserved != null && (recommended == null || Compare(bestReserved, recommended) > 0))
                         reservedBetter = bestReserved;
                 }
@@ -81,6 +82,7 @@ public sealed class GearRecommendationService
             {
                 Slot = slot,
                 Recommended = recommended,
+                CurrentlyEquipped = currentlyEquipped,
                 BetterReservedCandidate = reservedBetter,
             });
         }
@@ -97,12 +99,13 @@ public sealed class GearRecommendationService
                 .Where(x => !SamePhysicalItem(x.Entry, left.Recommended.Entry));
 
             if (config.GearsetItems != ReservedItemPolicy.Allow)
-                rightOrdered = rightOrdered.Where(x => !x.ReservedByGearSet);
+                rightOrdered = rightOrdered.Where(x => !x.ReservedByGearSet || x.SourceKind == ItemSourceKind.EquippedTarget);
 
             rows[rightIndex] = new RecommendationRow
             {
                 Slot = GearSlot.RingRight,
                 Recommended = rightOrdered.FirstOrDefault(),
+                CurrentlyEquipped = rows[rightIndex].CurrentlyEquipped,
                 BetterReservedCandidate = rows[rightIndex].BetterReservedCandidate,
             };
         }
@@ -136,7 +139,7 @@ public sealed class GearRecommendationService
         if (sourceKind == ItemSourceKind.EquippedElsewhere && !config.IncludeEquippedElsewhere)
             return false;
 
-        sourceLabel = GetSourceLabel(target, entry, sourceKind, retainerMap);
+        sourceLabel = GetSourceLabel(entry, sourceKind, retainerMap);
         return true;
     }
 
@@ -189,7 +192,7 @@ public sealed class GearRecommendationService
             output.Add(slot);
     }
 
-    private ItemSourceKind GetSourceKind(GearTarget target, InventoryEntry entry)
+    private static ItemSourceKind GetSourceKind(GearTarget target, InventoryEntry entry)
     {
         var container = entry.SortedContainer;
         if (IsEquippedContainer(container))
@@ -224,7 +227,7 @@ public sealed class GearRecommendationService
         _ => false,
     };
 
-    private string GetSourceLabel(GearTarget target, InventoryEntry entry, ItemSourceKind kind, IReadOnlyDictionary<ulong, RetainerInfo> retainerMap)
+    private static string GetSourceLabel(InventoryEntry entry, ItemSourceKind kind, IReadOnlyDictionary<ulong, RetainerInfo> retainerMap)
     {
         return kind switch
         {
