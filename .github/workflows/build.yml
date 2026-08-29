@@ -1,0 +1,66 @@
+name: GearScout CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          $dalamudDir = "$env:AppData\XIVLauncher\addon\Hooks\dev"
+          New-Item -ItemType Directory -Force -Path $dalamudDir | Out-Null
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
+          Expand-Archive -Force dalamud.zip $dalamudDir
+          Remove-Item dalamud.zip
+
+      - name: Build
+        run: dotnet build GearScout.slnx --configuration Release
+
+      - name: Locate packaged plugin
+        id: package
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path GearScout -Recurse -Filter latest.zip | Select-Object -First 1
+          if (-not $zip) {
+            $zip = Get-ChildItem -Path GearScout -Recurse -Filter *.zip | Select-Object -First 1
+          }
+          if (-not $zip) { throw "DalamudPackager output ZIP was not found." }
+          Copy-Item $zip.FullName "$env:GITHUB_WORKSPACE\latest.zip"
+          "path=$env:GITHUB_WORKSPACE\latest.zip" >> $env:GITHUB_OUTPUT
+          Write-Host "Package: $($zip.FullName)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GearScout
+          path: latest.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish rolling beta release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          gh release create latest latest.zip --title "GearScout 0.1.0.0 beta" --notes "Automated GearScout beta build from main."
