@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <Author>Arceuid731</Author>
+    <Name>GearScout</Name>
+    <Punchline>Recommended Gear across everything you own.</Punchline>
+    <Description>Find recommended gear across your inventory, Armoury Chest, chocobo saddlebag, retainers, glamour dresser and armoire, then build a persistent retrieve-to-equip checklist.</Description>
+    <RepoUrl>https://github.com/Arceuid731/GearScout</RepoUrl>
+    <Tags>gear;inventory;retainer;recommended</Tags>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>
