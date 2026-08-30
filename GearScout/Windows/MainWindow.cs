@@ -23,7 +23,7 @@ public sealed class MainWindow : Window, IDisposable
     private bool forceRefresh = true;
     private Vector2? nativeWindowPosition;
     private float nativeWindowWidth;
-    private Vector2 lastKnownSize = new(520, 420);
+    private Vector2 lastKnownSize = new(470, 360);
 
     private static readonly Vector4 RetrieveColor = new(1f, .58f, .22f, 1f);
     private static readonly Vector4 ReadyColor = new(.35f, .9f, .48f, 1f);
@@ -36,16 +36,25 @@ public sealed class MainWindow : Window, IDisposable
         this.plugin = plugin;
         cofferService = new CofferSuggestionService(plugin.DataManager, plugin.Configuration, plugin.RetainerService);
         ForceMainWindow = true;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 260), MaximumSize = new Vector2(900, 900) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 240), MaximumSize = new Vector2(760, 820) };
     }
 
     public void Dispose() { }
     public void RequestRefresh() => forceRefresh = true;
-    private bool DetachedCompact => !plugin.NativeEquipmentWindowOpen && plugin.Configuration.CompactPlanWhenDetached && plugin.Configuration.ActivePlan is { Items.Count: > 0 };
+
+    private bool DetachedCompact =>
+        !plugin.NativeEquipmentWindowOpen
+        && plugin.Configuration.CompactPlanWhenDetached
+        && plugin.Configuration.ActivePlan is { Items.Count: > 0 };
 
     public void AnchorTo(Vector2 nativePosition, float nativeScaledWidth)
     {
-        if (!plugin.Configuration.AnchorToEquipmentWindow) { ReleaseAnchor(); return; }
+        if (!plugin.Configuration.AnchorToEquipmentWindow)
+        {
+            ReleaseAnchor();
+            return;
+        }
+
         nativeWindowPosition = nativePosition;
         nativeWindowWidth = nativeScaledWidth;
     }
@@ -61,17 +70,17 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (DetachedCompact)
         {
-            SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 220), MaximumSize = new Vector2(620, 760) };
+            SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(390, 180), MaximumSize = new Vector2(560, 700) };
             return;
         }
 
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(500, 300), MaximumSize = new Vector2(900, 900) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 240), MaximumSize = new Vector2(760, 820) };
         if (!plugin.Configuration.AnchorToEquipmentWindow || nativeWindowPosition == null)
             return;
 
         const float gap = 10f;
         var viewport = ImGuiHelpers.MainViewport;
-        var desiredWidth = Math.Max(lastKnownSize.X, 500f * ImGuiHelpers.GlobalScale);
+        var desiredWidth = Math.Max(lastKnownSize.X, 430f * ImGuiHelpers.GlobalScale);
         var workLeft = viewport.WorkPos.X;
         var workRight = viewport.WorkPos.X + viewport.WorkSize.X;
         var left = nativeWindowPosition.Value.X - desiredWidth - gap;
@@ -167,10 +176,10 @@ public sealed class MainWindow : Window, IDisposable
                 new Vector2(0, -1)))
             return;
 
-        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 30);
-        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 72);
+        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 28);
+        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 66);
         ImGui.TableSetupColumn("Recommendation", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Where", ImGuiTableColumnFlags.WidthFixed, 125);
+        ImGui.TableSetupColumn("Where", ImGuiTableColumnFlags.WidthFixed, 100);
         ImGui.TableHeadersRow();
 
         foreach (var row in recommendations)
@@ -202,8 +211,6 @@ public sealed class MainWindow : Window, IDisposable
             else
             {
                 ImGui.TextColored(PotentialColor, "◇");
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip("Potential recommendation only — open the coffer to reveal the actual item.");
             }
 
             ImGui.TableSetColumnIndex(1);
@@ -211,18 +218,25 @@ public sealed class MainWindow : Window, IDisposable
 
             ImGui.TableSetColumnIndex(2);
             if (exact != null)
+            {
                 DrawExactRecommendation(exact);
-            else
-                ImGui.TextDisabled("No exact owned piece found");
-
-            if (potential.Count > 0)
-                DrawPotentialRecommendations(row.Slot, potential, exact, current);
+                if (potential.Count > 0)
+                {
+                    ImGui.SameLine();
+                    DrawPotentialBadge(row.Slot, potential, exact, current, true);
+                }
+            }
+            else if (potential.Count > 0)
+            {
+                DrawPotentialBadge(row.Slot, potential, null, current, false);
+            }
 
             if (row.BetterReservedCandidate != null)
             {
-                ImGui.TextColored(PotentialColor, $"Reserved: {row.BetterReservedCandidate.ItemName}  iLvl {row.BetterReservedCandidate.ItemLevel}");
+                ImGui.SameLine();
+                ImGui.TextColored(PotentialColor, " reserved↑");
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip($"{row.BetterReservedCandidate.SourceLabel}\nUsed by one or more gearsets; current policy is Show as reserved.");
+                    ImGui.SetTooltip($"{row.BetterReservedCandidate.ItemName} — iLvl {row.BetterReservedCandidate.ItemLevel}\n{row.BetterReservedCandidate.SourceLabel}\nUsed by a gearset.");
             }
 
             ImGui.TableSetColumnIndex(3);
@@ -237,54 +251,45 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawExactRecommendation(RecommendationCandidate candidate)
     {
-        DrawItemIcon(candidate.Entry.ItemId, 24);
+        DrawItemIcon(candidate.Entry.ItemId, 22);
         ImGui.SameLine();
         ImGui.TextUnformatted(candidate.ItemName + (candidate.Entry.IsHighQuality ? " HQ" : ""));
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Exact owned item\niLvl {candidate.ItemLevel} • equip {candidate.EquipLevel}\n{candidate.RankingSummary}\n{candidate.SourceLabel}");
         ImGui.SameLine();
-        ImGui.TextDisabled($" {candidate.ItemLevel}");
+        ImGui.TextDisabled($"{candidate.ItemLevel}");
     }
 
-    private void DrawPotentialRecommendations(
+    private void DrawPotentialBadge(
         GearSlot slot,
         IReadOnlyList<CofferSuggestion> potential,
         RecommendationCandidate? exact,
-        RecommendationCandidate? current)
+        RecommendationCandidate? current,
+        bool compact)
     {
         var best = potential[0];
         var isUpgrade = IsPotentialUpgradeForSlot(best, exact, current);
 
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3f);
-        DrawItemIcon(best.ItemId, 20);
+        DrawItemIcon(best.ItemId, compact ? 17 : 22);
         ImGui.SameLine();
-        ImGui.TextColored(isUpgrade ? ReadyColor : PotentialColor, isUpgrade ? "Potential ↑" : "Potential");
-        ImGui.SameLine();
-        ImGui.TextUnformatted(best.ItemName);
-        ImGui.SameLine();
-        ImGui.TextDisabled(best.ItemLevel > 0 ? $" iLvl {best.ItemLevel}" : " iLvl ?");
-        ImGui.SameLine();
-        ImGui.TextDisabled($" • open to reveal • {ShortSource(best.SourceLabel)}");
+        var label = compact
+            ? $"?{best.ItemLevel}{(potential.Count > 1 ? $" +{potential.Count - 1}" : "")}"
+            : $"Potential: {best.ItemName} [{best.ItemLevel}]";
+        ImGui.TextColored(isUpgrade ? ReadyColor : PotentialColor, label);
 
-        if (ImGui.IsItemHovered())
-        {
-            var benchmark = exact?.ItemLevel ?? current?.ItemLevel ?? 0;
-            var comparison = best.ItemLevel > 0
-                ? $"Coffer iLvl {best.ItemLevel} vs known {SlotName(slot)} iLvl {benchmark}."
-                : "The coffer has no useful iLvl metadata.";
-            ImGui.SetTooltip($"Potential recommendation, not an exact item.\n{comparison}\nGearScout will re-evaluate after you open it; it never opens coffers automatically.");
-        }
+        if (!ImGui.IsItemHovered())
+            return;
 
-        if (potential.Count > 1)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($" +{potential.Count - 1}");
-            if (ImGui.IsItemHovered())
-            {
-                var others = string.Join("\n", potential.Skip(1).Select(x => $"• {x.ItemName} — {(x.ItemLevel > 0 ? $"iLvl {x.ItemLevel}" : "iLvl ?")} — {ShortSource(x.SourceLabel)}"));
-                ImGui.SetTooltip($"Other potential sources for {SlotName(slot)}:\n{others}");
-            }
-        }
+        var benchmark = exact?.ItemLevel ?? current?.ItemLevel ?? 0;
+        var others = potential.Count > 1
+            ? "\n\nOther matching coffers:\n" + string.Join("\n", potential.Skip(1).Select(x => $"• {x.ItemName} — iLvl {x.ItemLevel} — {ShortSource(x.SourceLabel)}"))
+            : string.Empty;
+        ImGui.SetTooltip(
+            $"Potential {SlotName(slot)} source — open to reveal.\n" +
+            $"{best.ItemName}\n" +
+            $"Reward iLvl hint: {best.ItemLevel} • known item: {benchmark}\n" +
+            $"{best.SourceLabel}\n" +
+            "Not selectable until the actual item exists." + others);
     }
 
     private IReadOnlyList<CofferSuggestion> GetPotentialCoffers(GearSlot slot) =>
@@ -314,12 +319,12 @@ public sealed class MainWindow : Window, IDisposable
 
         if (detached)
         {
-            ImGui.TextUnformatted($"{plan.TargetName}  •  {GetJobAbbreviation(plan.JobId)} {plan.Level}");
+            ImGui.TextUnformatted($"{plan.TargetName} • {GetJobAbbreviation(plan.JobId)} {plan.Level}");
             ImGui.SameLine();
             ImGui.TextDisabled($"{done}/{plan.Items.Count}");
         }
 
-        if (ImGui.SmallButton(plugin.Configuration.HighlightPlanItems ? "Highlight: ON" : "Highlight: OFF"))
+        if (ImGui.SmallButton(plugin.Configuration.HighlightPlanItems ? "Highlight ON" : "Highlight OFF"))
         {
             plugin.Configuration.HighlightPlanItems = !plugin.Configuration.HighlightPlanItems;
             plugin.Configuration.Save();
@@ -361,24 +366,22 @@ public sealed class MainWindow : Window, IDisposable
         var pos = ImGui.GetCursorScreenPos();
         if (plugin.Configuration.HighlightPlanItems && item.State != PlanItemState.Equipped)
         {
-            var draw = ImGui.GetWindowDrawList();
-            draw.AddRectFilled(
+            ImGui.GetWindowDrawList().AddRectFilled(
                 pos - new Vector2(3, 2),
-                pos + new Vector2(ImGui.GetContentRegionAvail().X, 34),
+                pos + new Vector2(ImGui.GetContentRegionAvail().X, 32),
                 ImGui.GetColorU32(new Vector4(color.X, color.Y, color.Z, .10f)),
                 4f);
         }
 
         ImGui.TextColored(color, glyph);
         ImGui.SameLine();
-        DrawItemIcon(item.ItemId, 28);
+        DrawItemIcon(item.ItemId, 26);
         ImGui.SameLine();
         ImGui.BeginGroup();
         ImGui.TextUnformatted(item.ItemName);
-        ImGui.TextDisabled($"{SlotName(item.Slot)} • iLvl {item.ItemLevel} • {ShortSource(item.CurrentSourceLabel)}");
+        ImGui.TextDisabled($"{SlotName(item.Slot)} • {item.ItemLevel} • {ShortSource(item.CurrentSourceLabel)}");
         ImGui.EndGroup();
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(StateHelp(item));
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip(StateHelp(item));
     }
 
     private void DrawItemIcon(uint itemId, float size)
