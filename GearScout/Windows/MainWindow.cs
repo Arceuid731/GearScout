@@ -77,8 +77,6 @@ public sealed class MainWindow : Window, IDisposable
         var left = nativeWindowPosition.Value.X - desiredWidth - gap;
         var right = nativeWindowPosition.Value.X + nativeWindowWidth + gap;
 
-        // FFXIV's own Recommended Gear popup commonly occupies the right side of the
-        // Character sheet. Prefer the left side so GearScout never covers the native UI.
         var x = left >= workLeft
             ? left
             : right + desiredWidth <= workRight
@@ -164,8 +162,6 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawRecommendations(GearTarget target)
     {
-        DrawCofferSuggestions();
-
         if (!ImGui.BeginTable("##recommendations", 4,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY,
                 new Vector2(0, -1)))
@@ -173,79 +169,141 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 30);
         ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 72);
-        ImGui.TableSetupColumn("Best owned", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Recommendation", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Where", ImGuiTableColumnFlags.WidthFixed, 125);
         ImGui.TableHeadersRow();
 
         foreach (var row in recommendations)
         {
-            var c = row.Recommended;
-            if (c == null) continue;
+            var exact = row.Recommended;
             var current = row.CurrentlyEquipped;
-            if (plugin.Configuration.ShowOnlyUpgrades && current != null && !GearRecommendationService.IsBetter(c, current) && row.BetterReservedCandidate == null)
+            var potential = GetPotentialCoffers(row.Slot);
+            var exactUpgrade = exact != null && (current == null || GearRecommendationService.IsBetter(exact, current));
+            var potentialUpgrade = potential.Any(x => IsPotentialUpgradeForSlot(x, exact, current));
+
+            if (exact == null && potential.Count == 0)
+                continue;
+            if (plugin.Configuration.ShowOnlyUpgrades && !exactUpgrade && row.BetterReservedCandidate == null && !potentialUpgrade)
                 continue;
 
             ImGui.TableNextRow();
             ImGui.TableSetColumnIndex(0);
-            var selected = plugin.PlanService.IsSelected(target, c);
-            var old = selected;
-            ImGui.Checkbox($"##plan-{row.Slot}", ref selected);
-            if (selected != old)
+            if (exact != null)
             {
-                plugin.PlanService.ToggleSelection(target, c);
-                RequestRefresh();
+                var selected = plugin.PlanService.IsSelected(target, exact);
+                var old = selected;
+                ImGui.Checkbox($"##plan-{row.Slot}", ref selected);
+                if (selected != old)
+                {
+                    plugin.PlanService.ToggleSelection(target, exact);
+                    RequestRefresh();
+                }
+            }
+            else
+            {
+                ImGui.TextColored(PotentialColor, "◇");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Potential recommendation only — open the coffer to reveal the actual item.");
             }
 
             ImGui.TableSetColumnIndex(1);
             ImGui.TextDisabled(SlotName(row.Slot));
 
             ImGui.TableSetColumnIndex(2);
-            DrawItemIcon(c.Entry.ItemId, 24);
-            ImGui.SameLine();
-            ImGui.TextUnformatted(c.ItemName + (c.Entry.IsHighQuality ? " HQ" : ""));
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip($"iLvl {c.ItemLevel} • equip {c.EquipLevel}\n{c.RankingSummary}\n{c.SourceLabel}");
-            ImGui.SameLine();
-            ImGui.TextDisabled($" {c.ItemLevel}");
+            if (exact != null)
+                DrawExactRecommendation(exact);
+            else
+                ImGui.TextDisabled("No exact owned piece found");
+
+            if (potential.Count > 0)
+                DrawPotentialRecommendations(row.Slot, potential, exact, current);
+
+            if (row.BetterReservedCandidate != null)
+            {
+                ImGui.TextColored(PotentialColor, $"Reserved: {row.BetterReservedCandidate.ItemName}  iLvl {row.BetterReservedCandidate.ItemLevel}");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip($"{row.BetterReservedCandidate.SourceLabel}\nUsed by one or more gearsets; current policy is Show as reserved.");
+            }
 
             ImGui.TableSetColumnIndex(3);
-            ImGui.TextColored(SourceColor(c.SourceKind), ShortSource(c.SourceLabel));
+            if (exact != null)
+                ImGui.TextColored(SourceColor(exact.SourceKind), ShortSource(exact.SourceLabel));
+            else if (potential.Count > 0)
+                ImGui.TextColored(PotentialColor, ShortSource(potential[0].SourceLabel));
         }
 
         ImGui.EndTable();
     }
 
-    private void DrawCofferSuggestions()
+    private void DrawExactRecommendation(RecommendationCandidate candidate)
     {
-        if (cofferSuggestions.Count == 0)
-            return;
+        DrawItemIcon(candidate.Entry.ItemId, 24);
+        ImGui.SameLine();
+        ImGui.TextUnformatted(candidate.ItemName + (candidate.Entry.IsHighQuality ? " HQ" : ""));
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip($"Exact owned item\niLvl {candidate.ItemLevel} • equip {candidate.EquipLevel}\n{candidate.RankingSummary}\n{candidate.SourceLabel}");
+        ImGui.SameLine();
+        ImGui.TextDisabled($" {candidate.ItemLevel}");
+    }
 
-        var upgrades = cofferSuggestions.Count(x => x.LooksLikeUpgrade);
-        var label = upgrades > 0
-            ? $"Coffers / attire  •  {upgrades} potential upgrade{(upgrades == 1 ? "" : "s")}"
-            : $"Coffers / attire  •  {cofferSuggestions.Count} owned";
+    private void DrawPotentialRecommendations(
+        GearSlot slot,
+        IReadOnlyList<CofferSuggestion> potential,
+        RecommendationCandidate? exact,
+        RecommendationCandidate? current)
+    {
+        var best = potential[0];
+        var isUpgrade = IsPotentialUpgradeForSlot(best, exact, current);
 
-        if (!ImGui.CollapsingHeader($"{label}##coffers"))
-            return;
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 3f);
+        DrawItemIcon(best.ItemId, 20);
+        ImGui.SameLine();
+        ImGui.TextColored(isUpgrade ? ReadyColor : PotentialColor, isUpgrade ? "Potential ↑" : "Potential");
+        ImGui.SameLine();
+        ImGui.TextUnformatted(best.ItemName);
+        ImGui.SameLine();
+        ImGui.TextDisabled(best.ItemLevel > 0 ? $" iLvl {best.ItemLevel}" : " iLvl ?");
+        ImGui.SameLine();
+        ImGui.TextDisabled($" • open to reveal • {ShortSource(best.SourceLabel)}");
 
-        ImGui.TextDisabled("Potential only: GearScout uses the coffer's native iLvl/slot hints and never opens it automatically.");
-        foreach (var coffer in cofferSuggestions)
+        if (ImGui.IsItemHovered())
         {
-            var glyph = coffer.LooksLikeUpgrade ? "↑" : "◇";
-            ImGui.TextColored(coffer.LooksLikeUpgrade ? ReadyColor : PotentialColor, glyph);
-            ImGui.SameLine();
-            DrawItemIcon(coffer.ItemId, 25);
-            ImGui.SameLine();
-            ImGui.BeginGroup();
-            ImGui.TextUnformatted(coffer.ItemName);
-            var slots = string.Join(" / ", coffer.PotentialSlots.Select(SlotName).Distinct());
-            var ilvl = coffer.ItemLevel > 0 ? $"iLvl {coffer.ItemLevel}" : "iLvl unknown";
-            ImGui.TextDisabled($"Open to reveal • {slots} • {ilvl} • {ShortSource(coffer.SourceLabel)}");
-            ImGui.EndGroup();
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("GearScout is not claiming an exact reward here. This is a potential equipment source inferred from native game data.");
+            var benchmark = exact?.ItemLevel ?? current?.ItemLevel ?? 0;
+            var comparison = best.ItemLevel > 0
+                ? $"Coffer iLvl {best.ItemLevel} vs known {SlotName(slot)} iLvl {benchmark}."
+                : "The coffer has no useful iLvl metadata.";
+            ImGui.SetTooltip($"Potential recommendation, not an exact item.\n{comparison}\nGearScout will re-evaluate after you open it; it never opens coffers automatically.");
         }
-        ImGui.Separator();
+
+        if (potential.Count > 1)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($" +{potential.Count - 1}");
+            if (ImGui.IsItemHovered())
+            {
+                var others = string.Join("\n", potential.Skip(1).Select(x => $"• {x.ItemName} — {(x.ItemLevel > 0 ? $"iLvl {x.ItemLevel}" : "iLvl ?")} — {ShortSource(x.SourceLabel)}"));
+                ImGui.SetTooltip($"Other potential sources for {SlotName(slot)}:\n{others}");
+            }
+        }
+    }
+
+    private IReadOnlyList<CofferSuggestion> GetPotentialCoffers(GearSlot slot) =>
+        cofferSuggestions
+            .Where(x => x.PotentialSlots.Contains(slot))
+            .OrderByDescending(x => x.ItemLevel)
+            .ThenBy(x => x.ItemName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+    private static bool IsPotentialUpgradeForSlot(
+        CofferSuggestion coffer,
+        RecommendationCandidate? exact,
+        RecommendationCandidate? current)
+    {
+        if (coffer.ItemLevel == 0)
+            return false;
+
+        var benchmark = exact?.ItemLevel ?? current?.ItemLevel ?? 0;
+        return coffer.ItemLevel > benchmark;
     }
 
     private void DrawCompactPlan(GearTarget target, bool detached = true)
