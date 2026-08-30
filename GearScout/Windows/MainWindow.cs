@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using GearScout.Services;
@@ -18,356 +19,181 @@ public sealed class MainWindow : Window, IDisposable
     private DateTime nextRefreshUtc = DateTime.MinValue;
     private string targetKey = string.Empty;
     private bool forceRefresh = true;
-    private bool groupPlanBySource = true;
     private Vector2? nativeWindowPosition;
     private float nativeWindowWidth;
-    private Vector2 lastKnownSize = new(640, 380);
+    private Vector2 lastKnownSize = new(520, 420);
 
-    public MainWindow(Plugin plugin)
-        : base("GearScout##GearScoutMain")
+    private static readonly Vector4 RetrieveColor = new(1f, .58f, .22f, 1f);
+    private static readonly Vector4 ReadyColor = new(.35f, .9f, .48f, 1f);
+    private static readonly Vector4 EquippedColor = new(.35f, .82f, 1f, 1f);
+    private static readonly Vector4 MissingColor = new(1f, .35f, .35f, 1f);
+
+    public MainWindow(Plugin plugin) : base("GearScout##GearScoutMain")
     {
         this.plugin = plugin;
         ForceMainWindow = true;
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(640, 380),
-            MaximumSize = new Vector2(1200, 1000),
-        };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 260), MaximumSize = new Vector2(900, 900) };
     }
 
     public void Dispose() { }
     public void RequestRefresh() => forceRefresh = true;
+    private bool DetachedCompact => !plugin.NativeEquipmentWindowOpen && plugin.Configuration.CompactPlanWhenDetached && plugin.Configuration.ActivePlan is { Items.Count: > 0 };
 
     public void AnchorTo(Vector2 nativePosition, float nativeScaledWidth)
     {
-        if (!plugin.Configuration.AnchorToEquipmentWindow)
-        {
-            ReleaseAnchor();
-            return;
-        }
-
-        nativeWindowPosition = nativePosition;
-        nativeWindowWidth = nativeScaledWidth;
+        if (!plugin.Configuration.AnchorToEquipmentWindow) { ReleaseAnchor(); return; }
+        nativeWindowPosition = nativePosition; nativeWindowWidth = nativeScaledWidth;
     }
 
-    public void ReleaseAnchor()
-    {
-        nativeWindowPosition = null;
-        Position = null;
-        PositionCondition = ImGuiCond.None;
-    }
+    public void ReleaseAnchor() { nativeWindowPosition = null; Position = null; PositionCondition = ImGuiCond.None; }
 
     public override void PreDraw()
     {
-        if (!plugin.Configuration.AnchorToEquipmentWindow || nativeWindowPosition == null)
+        if (DetachedCompact)
+        {
+            SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(430, 220), MaximumSize = new Vector2(620, 760) };
             return;
-
+        }
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(500, 300), MaximumSize = new Vector2(900, 900) };
+        if (!plugin.Configuration.AnchorToEquipmentWindow || nativeWindowPosition == null) return;
         const float gap = 10f;
         var viewport = ImGuiHelpers.MainViewport;
-        var availableWidth = viewport.WorkSize.X;
-        var desiredWidth = Math.Max(lastKnownSize.X, SizeConstraints?.MinimumSize.X * ImGuiHelpers.GlobalScale ?? 640f);
-
+        var desiredWidth = Math.Max(lastKnownSize.X, 500f * ImGuiHelpers.GlobalScale);
         var right = nativeWindowPosition.Value.X + nativeWindowWidth + gap;
         var left = nativeWindowPosition.Value.X - desiredWidth - gap;
-        var x = right + desiredWidth <= availableWidth
-            ? right
-            : Math.Max(0f, left);
-
-        Position = new Vector2(x, Math.Max(0f, nativeWindowPosition.Value.Y));
-        PositionCondition = ImGuiCond.Always;
+        var x = right + desiredWidth <= viewport.WorkPos.X + viewport.WorkSize.X ? right : Math.Max(viewport.WorkPos.X, left);
+        Position = new Vector2(x, Math.Max(viewport.WorkPos.Y, nativeWindowPosition.Value.Y)); PositionCondition = ImGuiCond.Always;
     }
 
     public override void Draw()
     {
         lastKnownSize = ImGui.GetWindowSize();
-
-        if (!plugin.AllaganTools.IsAvailable)
-        {
-            ImGui.TextColored(new Vector4(1f, 0.45f, 0.35f, 1f), "Allagan Tools is not available.");
-            ImGui.TextWrapped("GearScout uses Allagan Tools as its global inventory index. Install/enable Allagan Tools, then open the storages you want it to snapshot.");
-            if (ImGui.Button("Settings"))
-                plugin.ToggleConfigUi();
-            return;
-        }
-
+        if (!plugin.AllaganTools.IsAvailable) { ImGui.TextColored(MissingColor, "Allagan Tools is not available."); return; }
         var target = plugin.GetEffectiveTarget();
-        if (target == null)
-        {
-            ImGui.TextWrapped("No equipment target is available. Open your Character window or a retainer's equipment window.");
-            return;
-        }
-
-        if (forceRefresh || target.Key != targetKey || DateTime.UtcNow >= nextRefreshUtc)
-            Refresh(target);
-
+        if (target == null) { ImGui.TextDisabled("Open Character or retainer equipment to start."); return; }
+        if (forceRefresh || target.Key != targetKey || DateTime.UtcNow >= nextRefreshUtc) Refresh(target);
+        if (DetachedCompact) { DrawCompactPlan(target); return; }
         DrawHeader(target);
-
-        if (plugin.Configuration.ActivePlan != null)
+        if (plugin.Configuration.ActivePlan is { Items.Count: > 0 })
         {
-            if (ImGui.BeginTabBar("##GearScoutTabs"))
+            if (ImGui.BeginTabBar("##tabs"))
             {
-                if (ImGui.BeginTabItem("Gear plan"))
-                {
-                    DrawPlan(target);
-                    ImGui.EndTabItem();
-                }
-                if (ImGui.BeginTabItem("Recommendations"))
-                {
-                    DrawRecommendations(target);
-                    ImGui.EndTabItem();
-                }
+                if (ImGui.BeginTabItem("Plan")) { DrawCompactPlan(target, false); ImGui.EndTabItem(); }
+                if (ImGui.BeginTabItem("Recommendations")) { DrawRecommendations(target); ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
             }
         }
-        else
-        {
-            DrawRecommendations(target);
-        }
+        else DrawRecommendations(target);
     }
 
     private void Refresh(GearTarget target)
     {
-        inventory = plugin.AllaganTools.GetAllItems();
-        plugin.PlanService.Refresh(inventory);
-        recommendations = plugin.RecommendationService.Build(target, inventory);
-        targetKey = target.Key;
-        nextRefreshUtc = DateTime.UtcNow.AddSeconds(1);
-        forceRefresh = false;
+        inventory = plugin.AllaganTools.GetAllItems(); plugin.PlanService.Refresh(inventory);
+        recommendations = plugin.RecommendationService.Build(target, inventory); targetKey = target.Key;
+        nextRefreshUtc = DateTime.UtcNow.AddSeconds(1); forceRefresh = false;
     }
 
     private void DrawHeader(GearTarget target)
     {
-        var job = GetJobAbbreviation(target.JobId);
-        ImGui.TextUnformatted(target.IsRetainer ? $"Retainer: {target.Name}" : target.Name);
-        ImGui.SameLine();
-        ImGui.TextDisabled($"{job} Lv. {target.Level}");
-
-        ImGui.SameLine();
-        if (ImGui.SmallButton("Refresh"))
-            RequestRefresh();
-        ImGui.SameLine();
-        if (ImGui.SmallButton("Settings"))
-            plugin.ToggleConfigUi();
-
-        var currentItems = recommendations.Select(x => x.CurrentlyEquipped).Where(x => x != null).Cast<RecommendationCandidate>().ToList();
-        var recommendedItems = recommendations.Select(x => x.Recommended).Where(x => x != null).Cast<RecommendationCandidate>().ToList();
-        if (currentItems.Count > 0 && recommendedItems.Count > 0)
-        {
-            var currentAverage = currentItems.Average(x => x.ItemLevel);
-            var recommendedAverage = recommendedItems.Average(x => x.ItemLevel);
-            ImGui.TextDisabled($"Owned recommendation: avg iLvl {recommendedAverage:0}   |   currently detected: {currentAverage:0}");
-        }
-        else
-        {
-            ImGui.TextDisabled("Recommended Gear-style ranking: job stats first, item level as fallback/tie-breaker — not an endgame BiS solver.");
-        }
-
+        ImGui.TextUnformatted(target.Name); ImGui.SameLine(); ImGui.TextDisabled($"{GetJobAbbreviation(target.JobId)} {target.Level}");
+        ImGui.SameLine(ImGui.GetWindowWidth() - 105); if (ImGui.SmallButton("↻##refresh")) RequestRefresh();
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Refresh"); ImGui.SameLine(); if (ImGui.SmallButton("⚙##settings")) plugin.ToggleConfigUi();
         ImGui.Separator();
     }
 
     private void DrawRecommendations(GearTarget target)
     {
-        ImGui.TextWrapped("Select the pieces you actually want for this target. The selection becomes a persistent plan and stays visible while you retrieve the items.");
-        ImGui.Spacing();
-
-        if (!ImGui.BeginTable("##Recommendations", 6,
-                ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable | ImGuiTableFlags.ScrollY,
-                new Vector2(0, -1)))
-            return;
-
-        ImGui.TableSetupColumn("Plan", ImGuiTableColumnFlags.WidthFixed, 42);
-        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 90);
-        ImGui.TableSetupColumn("Recommended", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("iLvl", ImGuiTableColumnFlags.WidthFixed, 55);
-        ImGui.TableSetupColumn("Location", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Notes", ImGuiTableColumnFlags.WidthStretch);
+        if (!ImGui.BeginTable("##recommendations", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY, new Vector2(0, -1))) return;
+        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 30);
+        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 72);
+        ImGui.TableSetupColumn("Best owned", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Where", ImGuiTableColumnFlags.WidthFixed, 125);
         ImGui.TableHeadersRow();
-
         foreach (var row in recommendations)
         {
-            var candidate = row.Recommended;
-            if (candidate == null)
-                continue;
-
+            var c = row.Recommended; if (c == null) continue;
             var current = row.CurrentlyEquipped;
-            var isUpgrade = current == null || GearRecommendationService.IsBetter(candidate, current);
-            if (plugin.Configuration.ShowOnlyUpgrades && !isUpgrade && row.BetterReservedCandidate == null)
-                continue;
-
+            if (plugin.Configuration.ShowOnlyUpgrades && current != null && !GearRecommendationService.IsBetter(c, current) && row.BetterReservedCandidate == null) continue;
             ImGui.TableNextRow();
-            ImGui.TableSetColumnIndex(0);
-            var selected = plugin.PlanService.IsSelected(target, candidate);
-            var previous = selected;
-            ImGui.Checkbox($"##plan-{row.Slot}", ref selected);
-            if (selected != previous)
-            {
-                plugin.PlanService.ToggleSelection(target, candidate);
-                RequestRefresh();
-            }
-
-            ImGui.TableSetColumnIndex(1);
-            ImGui.TextUnformatted(SlotName(row.Slot));
-
-            ImGui.TableSetColumnIndex(2);
-            ImGui.TextUnformatted(candidate.ItemName + (candidate.Entry.IsHighQuality ? " HQ" : string.Empty));
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.BeginTooltip();
-                ImGui.TextUnformatted(candidate.ItemName);
-                ImGui.TextDisabled($"Equip level {candidate.EquipLevel} • item level {candidate.ItemLevel}");
-                ImGui.TextDisabled(candidate.RankingSummary);
-                ImGui.TextDisabled($"Item #{candidate.Entry.ItemId} • {candidate.SourceLabel}");
-                if (candidate.Entry.InGearSet)
-                    ImGui.TextColored(new Vector4(1f, 0.75f, 0.25f, 1f), $"Used by gearset(s): {string.Join(", ", candidate.Entry.GearSets.Select(x => $"#{x + 1}"))}");
-                ImGui.EndTooltip();
-            }
-
-            ImGui.TableSetColumnIndex(3);
-            ImGui.TextUnformatted(candidate.ItemLevel.ToString());
-
-            ImGui.TableSetColumnIndex(4);
-            DrawSource(candidate);
-
-            ImGui.TableSetColumnIndex(5);
-            if (candidate.SourceKind == ItemSourceKind.EquippedTarget)
-                ImGui.TextColored(new Vector4(0.35f, 0.9f, 0.45f, 1f), "Already equipped");
-            else if (current != null)
-                ImGui.TextDisabled($"Current: {current.ItemName} ({current.ItemLevel})");
-            else
-                ImGui.TextDisabled("No equipped piece detected");
-
-            if (row.BetterReservedCandidate != null)
-            {
-                ImGui.TextColored(new Vector4(1f, 0.75f, 0.25f, 1f),
-                    $"Reserved better: {row.BetterReservedCandidate.ItemName} ({row.BetterReservedCandidate.ItemLevel})");
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip($"{row.BetterReservedCandidate.SourceLabel}\n{row.BetterReservedCandidate.RankingSummary}\nUsed by one or more gearsets; current policy is Show as reserved.");
-            }
+            ImGui.TableSetColumnIndex(0); var selected = plugin.PlanService.IsSelected(target, c); var old = selected;
+            ImGui.Checkbox($"##plan-{row.Slot}", ref selected); if (selected != old) { plugin.PlanService.ToggleSelection(target, c); RequestRefresh(); }
+            ImGui.TableSetColumnIndex(1); ImGui.TextDisabled(SlotName(row.Slot));
+            ImGui.TableSetColumnIndex(2); DrawItemIcon(c.Entry.ItemId, 24); ImGui.SameLine(); ImGui.TextUnformatted(c.ItemName + (c.Entry.IsHighQuality ? " HQ" : ""));
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip($"iLvl {c.ItemLevel} • equip {c.EquipLevel}\n{c.RankingSummary}\n{c.SourceLabel}");
+            ImGui.SameLine(); ImGui.TextDisabled($" {c.ItemLevel}");
+            ImGui.TableSetColumnIndex(3); ImGui.TextColored(SourceColor(c.SourceKind), ShortSource(c.SourceLabel));
         }
-
         ImGui.EndTable();
     }
 
-    private void DrawPlan(GearTarget target)
+    private void DrawCompactPlan(GearTarget target, bool detached = true)
     {
-        var plan = plugin.Configuration.ActivePlan;
-        if (plan == null)
-            return;
-
-        var total = plan.Items.Count;
-        var retrieved = plan.Items.Count(x => x.State is PlanItemState.Retrieved or PlanItemState.Equipped);
-        var equipped = plan.Items.Count(x => x.State == PlanItemState.Equipped);
-        ImGui.Text($"{retrieved}/{total} retrieved   •   {equipped}/{total} equipped");
-
-        if (ImGui.Button("Recalculate selected slots"))
+        var plan = plugin.Configuration.ActivePlan; if (plan == null) return;
+        var done = plan.Items.Count(x => x.State == PlanItemState.Equipped);
+        if (detached)
         {
-            plugin.PlanService.ReplaceSelectedRecommendations(target, recommendations);
-            RequestRefresh();
+            ImGui.TextUnformatted($"{plan.TargetName}  •  {GetJobAbbreviation(plan.JobId)} {plan.Level}");
+            ImGui.SameLine(); ImGui.TextDisabled($"{done}/{plan.Items.Count}");
         }
-        ImGui.SameLine();
-        if (ImGui.Button("Finish / clear plan"))
+        if (ImGui.SmallButton(plugin.Configuration.HighlightPlanItems ? "Highlight: ON" : "Highlight: OFF"))
         {
-            plugin.PlanService.Clear();
-            RequestRefresh();
-            return;
+            plugin.Configuration.HighlightPlanItems = !plugin.Configuration.HighlightPlanItems; plugin.Configuration.Save();
         }
-        ImGui.SameLine();
-        ImGui.Checkbox("Group by location", ref groupPlanBySource);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Toggle visual emphasis for items still to retrieve/equip.");
+        ImGui.SameLine(); if (ImGui.SmallButton("↻##planrefresh")) RequestRefresh();
+        ImGui.SameLine(); if (ImGui.SmallButton("Clear")) { plugin.PlanService.Clear(); RequestRefresh(); return; }
+        ImGui.Separator();
 
-        ImGui.Spacing();
-        if (groupPlanBySource)
-        {
-            var groups = plan.Items
-                .OrderBy(x => x.State)
-                .ThenBy(x => x.CurrentSourceLabel)
-                .GroupBy(x => PlanGroup(x));
-
-            foreach (var group in groups)
-            {
-                if (ImGui.CollapsingHeader($"{group.Key} ({group.Count()})", ImGuiTreeNodeFlags.DefaultOpen))
-                {
-                    foreach (var item in group)
-                        DrawPlanItem(item);
-                }
-            }
-        }
-        else
-        {
-            foreach (var item in plan.Items.OrderBy(x => x.Slot))
-                DrawPlanItem(item);
-        }
+        foreach (var item in plan.Items.OrderBy(x => x.Slot)) DrawPlanRow(item);
     }
 
-    private static string PlanGroup(PlannedGearItem item) => item.State switch
+    private void DrawPlanRow(PlannedGearItem item)
     {
-        PlanItemState.Equipped => "Equipped",
-        PlanItemState.Retrieved => "Ready to equip (Inventory / Armoury)",
-        PlanItemState.Missing => "Location unknown",
-        _ => item.CurrentSourceLabel,
+        var color = item.State switch { PlanItemState.ToRetrieve => RetrieveColor, PlanItemState.Retrieved => ReadyColor, PlanItemState.Equipped => EquippedColor, _ => MissingColor };
+        var glyph = item.State switch { PlanItemState.ToRetrieve => "↓", PlanItemState.Retrieved => "→", PlanItemState.Equipped => "✓", _ => "?" };
+        var pos = ImGui.GetCursorScreenPos();
+        if (plugin.Configuration.HighlightPlanItems && item.State != PlanItemState.Equipped)
+        {
+            var draw = ImGui.GetWindowDrawList();
+            draw.AddRectFilled(pos - new Vector2(3, 2), pos + new Vector2(ImGui.GetContentRegionAvail().X, 34), ImGui.GetColorU32(new Vector4(color.X, color.Y, color.Z, .10f)), 4f);
+        }
+        ImGui.TextColored(color, glyph); ImGui.SameLine(); DrawItemIcon(item.ItemId, 28); ImGui.SameLine();
+        ImGui.BeginGroup(); ImGui.TextUnformatted(item.ItemName); ImGui.TextDisabled($"{SlotName(item.Slot)} • iLvl {item.ItemLevel} • {ShortSource(item.CurrentSourceLabel)}"); ImGui.EndGroup();
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip(StateHelp(item));
+    }
+
+    private void DrawItemIcon(uint itemId, float size)
+    {
+        if (!plugin.DataManager.GetExcelSheet<Item>().TryGetRow(itemId, out var item)) { ImGui.Dummy(new Vector2(size)); return; }
+        try
+        {
+            var tex = plugin.TextureProvider.GetFromGameIcon(new GameIconLookup(item.Icon)).GetWrapOrDefault();
+            if (tex != null) { ImGui.Image(tex.Handle, new Vector2(size)); return; }
+        }
+        catch { }
+        ImGui.Dummy(new Vector2(size));
+    }
+
+    private static string StateHelp(PlannedGearItem item) => item.State switch
+    {
+        PlanItemState.ToRetrieve => $"Retrieve from {item.CurrentSourceLabel}",
+        PlanItemState.Retrieved => "Item is in Inventory / Armoury: equip it.",
+        PlanItemState.Equipped => "Equipped.",
+        _ => "GearScout cannot currently locate this item.",
     };
-
-    private static void DrawPlanItem(PlannedGearItem item)
+    private static Vector4 SourceColor(ItemSourceKind kind) => kind switch
     {
-        var color = item.State switch
-        {
-            PlanItemState.ToRetrieve => new Vector4(1f, 0.35f, 0.3f, 1f),
-            PlanItemState.Retrieved => new Vector4(0.3f, 0.95f, 0.4f, 1f),
-            PlanItemState.Equipped => new Vector4(0.35f, 0.9f, 0.85f, 1f),
-            _ => new Vector4(1f, 0.7f, 0.25f, 1f),
-        };
-        var state = item.State switch
-        {
-            PlanItemState.ToRetrieve => "TO RETRIEVE",
-            PlanItemState.Retrieved => "RETRIEVED",
-            PlanItemState.Equipped => "EQUIPPED",
-            _ => "UNKNOWN",
-        };
-
-        ImGui.TextColored(color, state);
-        ImGui.SameLine(125);
-        ImGui.TextUnformatted($"{SlotName(item.Slot),-10}  {item.ItemName}  (iLvl {item.ItemLevel})");
-        ImGui.SameLine();
-        ImGui.TextDisabled($"— {item.CurrentSourceLabel}");
-    }
-
-    private static void DrawSource(RecommendationCandidate candidate)
-    {
-        var color = candidate.SourceKind switch
-        {
-            ItemSourceKind.EquippedTarget => new Vector4(0.35f, 0.9f, 0.45f, 1f),
-            ItemSourceKind.PlayerInventory or ItemSourceKind.Armoury => new Vector4(0.45f, 0.85f, 1f, 1f),
-            ItemSourceKind.EquippedElsewhere => new Vector4(1f, 0.65f, 0.25f, 1f),
-            _ => Vector4.One,
-        };
-        ImGui.TextColored(color, candidate.SourceLabel);
-        if (candidate.Entry.InGearSet)
-        {
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(1f, 0.75f, 0.25f, 1f), "[gearset]");
-        }
-    }
-
-    private string GetJobAbbreviation(uint jobId)
-    {
-        return plugin.DataManager.GetExcelSheet<ClassJob>().TryGetRow(jobId, out var job)
-            ? job.Abbreviation.ToString()
-            : $"Job {jobId}";
-    }
-
+        ItemSourceKind.EquippedTarget => ReadyColor,
+        ItemSourceKind.PlayerInventory or ItemSourceKind.Armoury => EquippedColor,
+        ItemSourceKind.EquippedElsewhere => RetrieveColor,
+        _ => Vector4.One,
+    };
+    private static string ShortSource(string s) => s.Replace("Glamour Dresser", "Dresser").Replace("Player Inventory", "Inventory").Replace("Armoury Chest", "Armoury");
+    private string GetJobAbbreviation(uint id) => plugin.DataManager.GetExcelSheet<ClassJob>().TryGetRow(id, out var j) ? j.Abbreviation.ToString() : $"Job {id}";
     private static string SlotName(GearSlot slot) => slot switch
     {
-        GearSlot.MainHand => "Weapon",
-        GearSlot.OffHand => "Off hand",
-        GearSlot.Head => "Head",
-        GearSlot.Body => "Body",
-        GearSlot.Hands => "Hands",
-        GearSlot.Legs => "Legs",
-        GearSlot.Feet => "Feet",
-        GearSlot.Ears => "Earrings",
-        GearSlot.Neck => "Necklace",
-        GearSlot.Wrists => "Bracelet",
-        GearSlot.RingLeft => "Ring 1",
-        GearSlot.RingRight => "Ring 2",
-        _ => slot.ToString(),
+        GearSlot.MainHand => "Weapon", GearSlot.OffHand => "Off hand", GearSlot.Head => "Head", GearSlot.Body => "Body", GearSlot.Hands => "Hands",
+        GearSlot.Legs => "Legs", GearSlot.Feet => "Feet", GearSlot.Ears => "Earrings", GearSlot.Neck => "Necklace", GearSlot.Wrists => "Bracelet",
+        GearSlot.RingLeft => "Ring 1", GearSlot.RingRight => "Ring 2", _ => slot.ToString(),
     };
 }
