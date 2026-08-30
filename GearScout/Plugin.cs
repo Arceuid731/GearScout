@@ -18,29 +18,33 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManagerService { get; private set; } = null!;
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+    [PluginService] internal static ITextureProvider TextureProviderService { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     public Configuration Configuration { get; }
     public IDataManager DataManager => DataManagerService;
+    public ITextureProvider TextureProvider => TextureProviderService;
     public AllaganToolsService AllaganTools { get; }
     public RetainerService RetainerService { get; }
     public GearRecommendationService RecommendationService { get; }
     public PlanService PlanService { get; }
+    public bool NativeEquipmentWindowOpen { get; private set; }
 
     private readonly WindowSystem windowSystem = new("GearScout");
     private readonly MainWindow mainWindow;
     private readonly ConfigWindow configWindow;
+    private readonly GlamourDresserHighlightService dresserHighlight;
     private bool retainerEquipmentContext;
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
-
         AllaganTools = new AllaganToolsService(PluginInterface, Log);
         RetainerService = new RetainerService();
         RecommendationService = new GearRecommendationService(DataManagerService, Configuration, AllaganTools, RetainerService);
         PlanService = new PlanService(Configuration, AllaganTools);
+        dresserHighlight = new GlamourDresserHighlightService(Configuration, Log);
 
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
@@ -62,6 +66,7 @@ public sealed class Plugin : IDalamudPlugin
         AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "RetainerCharacter", OnRetainerSetup);
         AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "RetainerCharacter", OnRetainerDraw);
         AddonLifecycle.RegisterListener(AddonEvent.PreFinalize, "RetainerCharacter", OnRetainerFinalize);
+        AddonLifecycle.RegisterListener(AddonEvent.PostDraw, "MiragePrismPrismBox", OnGlamourDresserDraw);
 
         if (Configuration.ActivePlan is { Items.Count: > 0 } && Configuration.KeepOpenWhilePlanActive)
             mainWindow.IsOpen = true;
@@ -71,7 +76,10 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        AddonLifecycle.UnregisterListener(OnCharacterSetup, OnCharacterDraw, OnCharacterFinalize, OnRetainerSetup, OnRetainerDraw, OnRetainerFinalize);
+        AddonLifecycle.UnregisterListener(
+            OnCharacterSetup, OnCharacterDraw, OnCharacterFinalize,
+            OnRetainerSetup, OnRetainerDraw, OnRetainerFinalize,
+            OnGlamourDresserDraw);
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -125,9 +133,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCharacterSetup(AddonEvent type, AddonArgs args)
     {
-        // The game's RetainerManager can keep LastSelectedRetainerId/RetainerObjectId populated
-        // after leaving the bell. A real Character addon must therefore always mean the player.
-        SetEquipmentContext(isRetainer: false);
+        NativeEquipmentWindowOpen = true;
+        SetEquipmentContext(false);
         if (Configuration.AutoOpenWithCharacterWindow)
             mainWindow.IsOpen = true;
         UpdateAnchor(args);
@@ -135,14 +142,14 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCharacterDraw(AddonEvent type, AddonArgs args)
     {
-        // Reinforce the player context while the native Character window is visibly being drawn.
-        // This prevents a stale retainer session from ever stealing the target after plugin reloads.
-        SetEquipmentContext(isRetainer: false);
+        NativeEquipmentWindowOpen = true;
+        SetEquipmentContext(false);
         UpdateAnchor(args);
     }
 
     private void OnCharacterFinalize(AddonEvent type, AddonArgs args)
     {
+        NativeEquipmentWindowOpen = false;
         retainerEquipmentContext = false;
         mainWindow.ReleaseAnchor();
         HandleEquipmentWindowClosed();
@@ -150,7 +157,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnRetainerSetup(AddonEvent type, AddonArgs args)
     {
-        SetEquipmentContext(isRetainer: true);
+        NativeEquipmentWindowOpen = true;
+        SetEquipmentContext(true);
         if (Configuration.AutoOpenWithRetainerEquipment)
             mainWindow.IsOpen = true;
         UpdateAnchor(args);
@@ -158,22 +166,29 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnRetainerDraw(AddonEvent type, AddonArgs args)
     {
-        SetEquipmentContext(isRetainer: true);
+        NativeEquipmentWindowOpen = true;
+        SetEquipmentContext(true);
         UpdateAnchor(args);
     }
 
     private void OnRetainerFinalize(AddonEvent type, AddonArgs args)
     {
+        NativeEquipmentWindowOpen = false;
         retainerEquipmentContext = false;
         mainWindow.ReleaseAnchor();
         HandleEquipmentWindowClosed();
+    }
+
+    private void OnGlamourDresserDraw(AddonEvent type, AddonArgs args)
+    {
+        if (!args.Addon.IsNull && args.Addon.IsVisible)
+            dresserHighlight.Draw(args.Addon.Address);
     }
 
     private void SetEquipmentContext(bool isRetainer)
     {
         if (retainerEquipmentContext == isRetainer)
             return;
-
         retainerEquipmentContext = isRetainer;
         RequestRefresh();
     }
@@ -182,19 +197,16 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!Configuration.AnchorToEquipmentWindow || args.Addon.IsNull || !args.Addon.IsVisible)
             return;
-
         mainWindow.AnchorTo(args.Addon.Position, args.Addon.ScaledWidth);
     }
 
     private void HandleEquipmentWindowClosed()
     {
-        // A non-empty retrieval plan is the only reason GearScout should outlive the native equipment window.
         if (Configuration.ActivePlan is { Items.Count: > 0 } && Configuration.KeepOpenWhilePlanActive)
         {
             mainWindow.IsOpen = true;
             return;
         }
-
         mainWindow.IsOpen = false;
     }
 }

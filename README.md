@@ -1,52 +1,51 @@
 # GearScout
 
-GearScout is a Dalamud plugin for Final Fantasy XIV that extends the game's **Recommended Gear** workflow across the gear you already own.
+GearScout is a Dalamud plugin that extends FFXIV's Recommended Gear idea across everything you already own.
 
-Instead of only looking at immediately available inventory/Armoury items, GearScout uses **Allagan Tools** inventory snapshots to search your inventory, Armoury Chest, chocobo saddlebag, retainers, glamour dresser and armoire.
+Instead of checking only the equipment currently available to the game, GearScout uses Allagan Tools' inventory index to consider your Inventory, Armoury Chest, chocobo saddlebag, retainers, Glamour Dresser and Armoire, then helps you retrieve the pieces you actually want to equip.
 
-> Early beta. GearScout is deliberately read-only: it never moves or equips items automatically.
+## Features
 
-## What the beta does
-
-- Detects the current player job/level or the retainer whose equipment is being viewed.
-- Recommends equippable gear using a simple Recommended Gear-style priority: item level first, not BiS/stat-weight optimization.
-- Shows where every recommended item is stored.
-- Handles the two ring slots as distinct physical items.
-- Lets you decide how gear already referenced by gearsets is treated: exclude it, show it as reserved, or allow it.
-- Can exclude gear currently equipped by another character/retainer.
-- Lets each storage source be enabled/disabled independently.
-- Builds a persistent gear plan from the pieces you select.
-- Keeps that plan visible after the target equipment window closes.
-- Tracks each selected piece through **To retrieve → Retrieved → Equipped**.
-- Automatically treats player inventory/Armoury as “retrieved”.
-- Groups the checklist by storage location so you can visit each retainer/storage once.
-- Keeps a chosen plan stable until you explicitly recalculate it.
-- Has a separate settings window available from Dalamud's plugin list.
-
-## Dependency
-
-GearScout currently requires **Allagan Tools** to be installed and enabled. Allagan Tools is the global inventory index; GearScout consumes its public IPC data rather than maintaining a second competing inventory database.
-
-Remote inventories are snapshots. Open your retainers, glamour dresser, armoire and other storage normally at least once so Allagan Tools has current data for them.
+- Recommended Gear-style ranking for the current character/job or a retainer.
+- Global inventory lookup through Allagan Tools.
+- Job-aware recommendation scoring for combat jobs, crafters and gatherers (not an endgame BiS solver).
+- Optional protection for equipment already referenced by gearsets.
+- Persistent retrieve → ready → equipped plans.
+- Compact independent retrieval checklist after the native equipment window closes.
+- Item icons, source labels and per-line state colours/glyphs.
+- Native Glamour Dresser highlighting for visible cells that belong to the active plan.
+- Optional hints for unopened equipment coffers / attire using only FFXIV's native item metadata. These are deliberately shown as *potential* gear sources; GearScout never invents exact contents and never opens a coffer automatically.
+- Independent settings window available from Dalamud or `/gearscout config`.
 
 ## Installation
 
-Once a beta release exists, add this URL under **Dalamud Settings → Experimental → Custom Plugin Repositories**:
+Add the following URL to **Dalamud Settings → Experimental → Custom Plugin Repositories**:
 
-```text
+```
 https://raw.githubusercontent.com/Arceuid731/GearScout/main/pluginmaster.json
 ```
 
-Then open the Plugin Installer, search for **GearScout**, and install it.
+Then search for **GearScout** in the Dalamud plugin installer.
 
-The `/gearscout` command toggles the main window. `/gearscout config` opens settings.
+GearScout currently requires **Allagan Tools** to be installed and enabled.
 
-## Build
+## Commands
 
-GearScout targets Dalamud API 15 / .NET 10 via `Dalamud.NET.Sdk/15.0.0`.
+- `/gearscout` — toggle the main GearScout window.
+- `/gearscout config` — open settings.
 
-```powershell
-dotnet build GearScout.slnx --configuration Release
-```
+## Retrieval workflow
 
-GitHub Actions also builds every pull request and publishes a rolling `latest` beta release after a successful push to `main`.
+1. Open Character or a retainer's equipment screen.
+2. Tick the recommended pieces you actually want.
+3. Close the native equipment screen; GearScout becomes a compact persistent checklist.
+4. Retrieve the indicated items. GearScout changes them from pending to ready automatically once they reach your Inventory / Armoury Chest.
+5. Re-open the target and equip them; completed lines are detected automatically.
+
+When **Highlight** is enabled, planned items currently visible in the Glamour Dresser are outlined directly in the native dresser grid to make large collections easier to search.
+
+## Notes
+
+GearScout is intentionally read-only. It does not move gear, equip items, or open coffers automatically. Remote inventory accuracy depends on the snapshots Allagan Tools has seen, so visit/open remote storages normally when you want them refreshed.
+
+GearScout is still beta software and native UI integrations such as Glamour Dresser highlighting can need adjustment after FFXIV/Dalamud updates.

@@ -27,7 +27,7 @@ public sealed class ConfigWindow : Window, IDisposable
         var config = plugin.Configuration;
         var changed = false;
 
-        ImGui.TextWrapped("GearScout stays read-only: it recommends, locates and tracks gear, but never moves or equips items automatically.");
+        ImGui.TextWrapped("GearScout stays read-only: it recommends, locates and tracks gear, but never moves, opens or equips items automatically.");
         ImGui.Spacing();
 
         Section("Reserved / equipped items");
@@ -51,20 +51,17 @@ public sealed class ConfigWindow : Window, IDisposable
                     ReservedItemPolicy.Allow => "Allow as recommended gear",
                     _ => value.ToString(),
                 };
-
                 var selected = config.GearsetItems == value;
                 if (ImGui.Selectable(label, selected))
                 {
                     config.GearsetItems = value;
                     changed = true;
                 }
-                if (selected)
-                    ImGui.SetItemDefaultFocus();
+                if (selected) ImGui.SetItemDefaultFocus();
             }
             ImGui.EndCombo();
         }
         ImGui.TextDisabled("For your own character, gear referenced by your gearsets remains eligible, just like native Recommended Gear.");
-
         changed |= Checkbox("Include gear equipped by another target", config.IncludeEquippedElsewhere, v => config.IncludeEquippedElsewhere = v);
         ImGui.TextDisabled("Disabled by default so GearScout won't suggest stripping another retainer/character.");
 
@@ -75,6 +72,8 @@ public sealed class ConfigWindow : Window, IDisposable
         changed |= Checkbox("Retainers", config.IncludeRetainers, v => config.IncludeRetainers = v);
         changed |= Checkbox("Glamour dresser", config.IncludeGlamourDresser, v => config.IncludeGlamourDresser = v);
         changed |= Checkbox("Armoire", config.IncludeArmoire, v => config.IncludeArmoire = v);
+        changed |= Checkbox("Show potential upgrades in equipment coffers / attire", config.IncludeCofferSuggestions, v => config.IncludeCofferSuggestions = v);
+        ImGui.TextDisabled("Coffers use only native game metadata (name/slot hints/iLvl). Exact contents are never assumed.");
 
         Section("Window behaviour");
         changed |= Checkbox("Auto-open with Character window", config.AutoOpenWithCharacterWindow, v => config.AutoOpenWithCharacterWindow = v);
@@ -82,11 +81,13 @@ public sealed class ConfigWindow : Window, IDisposable
         changed |= Checkbox("Anchor GearScout next to the equipment window", config.AnchorToEquipmentWindow, v =>
         {
             config.AnchorToEquipmentWindow = v;
-            if (!v)
-                plugin.ReleaseWindowAnchor();
+            if (!v) plugin.ReleaseWindowAnchor();
         });
+        ImGui.TextDisabled("When anchored, GearScout prefers the left side so FFXIV's own Recommended Gear popup remains unobstructed.");
         changed |= Checkbox("Keep GearScout open while a plan is active", config.KeepOpenWhilePlanActive, v => config.KeepOpenWhilePlanActive = v);
-        ImGui.TextDisabled("Without a selected retrieval plan, GearScout closes automatically with the native equipment window.");
+        changed |= Checkbox("Use compact checklist after closing equipment", config.CompactPlanWhenDetached, v => config.CompactPlanWhenDetached = v);
+        changed |= Checkbox("Highlight pending plan items", config.HighlightPlanItems, v => config.HighlightPlanItems = v);
+        ImGui.TextDisabled("Highlight also marks matching visible cells inside the Glamour Dresser.");
         changed |= Checkbox("Only show actual upgrades", config.ShowOnlyUpgrades, v => config.ShowOnlyUpgrades = v);
 
         Section("Data source");
@@ -126,7 +127,6 @@ public sealed class ConfigWindow : Window, IDisposable
         var edited = value;
         if (!ImGui.Checkbox(label, ref edited) || edited == value)
             return false;
-
         setter(edited);
         return true;
     }
