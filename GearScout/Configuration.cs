@@ -24,6 +24,11 @@ public sealed class Configuration : IPluginConfiguration
     public bool CloseWhenGameWindowCloses { get; set; } = false;
     public bool ShowOnlyUpgrades { get; set; } = false;
 
+    // Retrieval UX: once the native equipment sheet closes, GearScout becomes a small
+    // independent checklist instead of keeping the full recommendation browser around.
+    public bool CompactPlanWhenDetached { get; set; } = true;
+    public bool HighlightPlanItems { get; set; } = true;
+
     public GearPlan? ActivePlan { get; set; }
 
     private IDalamudPluginInterface? pluginInterface;
