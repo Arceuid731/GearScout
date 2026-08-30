@@ -16,6 +16,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool IncludeRetainers { get; set; } = true;
     public bool IncludeGlamourDresser { get; set; } = true;
     public bool IncludeArmoire { get; set; } = true;
+    public bool IncludeCofferSuggestions { get; set; } = true;
 
     public bool AutoOpenWithCharacterWindow { get; set; } = true;
     public bool AutoOpenWithRetainerEquipment { get; set; } = true;
